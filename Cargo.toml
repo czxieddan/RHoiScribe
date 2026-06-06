@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.102"
+rmcp = { version = "1.7.0", features = ["server", "transport-io"] }
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
