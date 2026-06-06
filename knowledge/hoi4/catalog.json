@@ -1,0 +1,76 @@
+{
+  "topics": [
+    {
+      "id": "structure.mod_tree",
+      "title": "HOI4 mod folder structure",
+      "category": "structure",
+      "file_types": ["mod", "txt", "gui", "gfx", "yml"],
+      "tags": ["paths", "folders", "common", "interface", "localisation"],
+      "body": "A HOI4 mod should keep script, interface, graphics, events, history, and localisation in their game-readable folders. Common script files usually live under common/scripted_guis, common/national_focus, common/decisions, common/ideas, common/characters, and related subfolders. Interface definitions live in interface/*.gui and sprite registration lives in interface/*.gfx. Image assets usually live under gfx/interface/<mod_name>/. Localisation is split by language under localisation/english or localisation/simp_chinese."
+    },
+    {
+      "id": "localisation.encoding",
+      "title": "Localisation encoding and key format",
+      "category": "localisation",
+      "file_types": ["yml"],
+      "tags": ["utf8", "bom", "language", "keys", "simp_chinese", "english"],
+      "body": "HOI4 localisation yml files should be written with UTF-8 BOM. A file starts with a language root such as l_english: or l_simp_chinese:. Entries use key:0 \"Text\". Keep generated keys stable and match script identifiers where possible. For Windows batch generation, explicitly write UTF-8 BOM instead of relying on the shell default encoding."
+    },
+    {
+      "id": "scripted_gui.dynamic_lists",
+      "title": "Scripted GUI dynamic lists and temp variables",
+      "category": "scripted_gui",
+      "file_types": ["txt", "gui"],
+      "tags": ["scripted_gui", "dynamic_lists", "triggers", "properties", "temp_variable", "array"],
+      "body": "Scripted GUI files live in common/scripted_guis/. A scripted_gui block binds context_type, window_name, parent_window_name, visible, triggers, effects, properties, and dynamic_lists. Dynamic lists use an array, entry_container, optional value name, optional index name, and change_scope. Triggers can calculate temp variables with set_temp_variable, add_to_temp_variable, clear_temp_array, and add_to_temp_array, then properties can bind frame, image, x, or y to those calculated values."
+    },
+    {
+      "id": "gui.gfx_sprites",
+      "title": "GUI elements and GFX sprites",
+      "category": "gui",
+      "file_types": ["gui", "gfx", "png", "dds", "tga"],
+      "tags": ["containerWindowType", "buttonType", "iconType", "spriteType", "GFX"],
+      "body": "GUI layout files use elements such as containerWindowType, buttonType, iconType, instantTextboxType, gridboxtype, background, position, size, clipping, and moveable. Sprite definitions live in .gfx files and use spriteType, corneredTileSpriteType, frameAnimatedSpriteType, or textSpriteType. Sprite names should use a stable GFX_ prefix and point to image assets under gfx/interface. PNG is preferred for editable generated assets unless the mod pipeline requires DDS or TGA."
+    },
+    {
+      "id": "focus.basic_tree",
+      "title": "National focus tree basics",
+      "category": "focus",
+      "file_types": ["txt"],
+      "tags": ["focus_tree", "national_focus", "completion_reward", "relative_position_id"],
+      "body": "National focus files live in common/national_focus/. A focus_tree has an id and a country selector. Each focus usually defines id, icon, x, y, cost, prerequisites or mutually_exclusive, available, bypass, cancel_if_invalid, continue_if_invalid, completion_reward, and ai_will_do. Use stable IDs and matching localisation keys. relative_position_id helps keep generated branches readable."
+    },
+    {
+      "id": "decision.basic_category",
+      "title": "Decision category and decision basics",
+      "category": "decision",
+      "file_types": ["txt"],
+      "tags": ["decisions", "category", "allowed", "visible", "available", "complete_effect"],
+      "body": "Decision files live in common/decisions/. A decision category can define icon, allowed, visible, and decisions. Individual decisions commonly use icon, allowed, visible, available, cost, fire_only_once, days_remove, remove_effect, complete_effect, ai_will_do, and custom_cost_trigger. Keep category IDs, decision IDs, and localisation keys consistent."
+    },
+    {
+      "id": "events.country_event",
+      "title": "Country event basics",
+      "category": "event",
+      "file_types": ["txt", "yml"],
+      "tags": ["namespace", "country_event", "option", "trigger", "immediate"],
+      "body": "Event files live in events/. Start with a namespace. A country_event usually defines id, title, desc, picture, is_triggered_only, fire_only_once, trigger, immediate, mean_time_to_happen, and option blocks. Options should have stable localisation keys and can run effects. Keep event IDs namespaced to avoid collisions."
+    },
+    {
+      "id": "ideas.country_ideas",
+      "title": "Country idea basics",
+      "category": "idea",
+      "file_types": ["txt", "yml"],
+      "tags": ["ideas", "country", "picture", "modifier", "allowed", "visible"],
+      "body": "Idea files live in common/ideas/. Country ideas are usually nested under ideas = { country = { ... } }. Each idea can define picture, allowed, visible, removal_cost, modifier, cancel, available, and ai_will_do. Keep picture names and localisation keys aligned with the idea ID."
+    },
+    {
+      "id": "debug.common_errors",
+      "title": "Common HOI4 mod generation errors",
+      "category": "debug",
+      "file_types": ["txt", "gui", "gfx", "yml"],
+      "tags": ["error_log", "braces", "paths", "scope", "ROOT", "THIS", "PREV"],
+      "body": "Common generated-file failures include missing braces, extra equals signs, wrong folders, missing localisation BOM, mismatched GFX names, invalid scope assumptions, and unstable generated IDs. Check error.log first. For scripted effects and triggers, verify ROOT, THIS, FROM, and PREV scopes before generating nested effects. For GUI, confirm that .gui element names match scripted_gui triggers, effects, and properties."
+    }
+  ]
+}
