@@ -1,8 +1,16 @@
+use std::{future, future::Future};
+
 use rmcp::{
-    ServerHandler, ServiceExt,
-    model::{Implementation, ServerCapabilities, ServerInfo},
+    ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
+    model::{
+        GetPromptRequestParams, GetPromptResult, Implementation, ListPromptsResult,
+        PaginatedRequestParams, ServerCapabilities, ServerInfo,
+    },
+    service::{MaybeSendFuture, RequestContext},
     transport::stdio,
 };
+
+use crate::prompts::PromptCatalog;
 
 pub const SERVER_NAME: &str = "rhoiscribe";
 pub const SERVER_TITLE: &str = "RHoiScribe";
@@ -55,6 +63,29 @@ impl RhoiScribeServer {
 impl ServerHandler for RhoiScribeServer {
     fn get_info(&self) -> ServerInfo {
         self.server_info()
+    }
+
+    fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListPromptsResult, McpError>> + MaybeSendFuture + '_ {
+        future::ready(Ok(ListPromptsResult::with_all_items(
+            PromptCatalog::builtin().to_mcp_prompts(),
+        )))
+    }
+
+    fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<GetPromptResult, McpError>> + MaybeSendFuture + '_ {
+        let arguments = request.arguments.unwrap_or_default();
+        future::ready(
+            PromptCatalog::builtin()
+                .render(&request.name, &arguments)
+                .map_err(|error| McpError::invalid_params(error.to_string(), None)),
+        )
     }
 }
 
