@@ -1,10 +1,34 @@
+<div align="center">
+
 # RHoiScribe
+
+Локальный MCP-сервер для Hearts of Iron IV modding agents
 
 [English](../README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-RHoiScribe - локальный MCP-сервер для AI agents, которые работают с модами Hearts of Iron IV. Он дает Codex, Claude Code и другим MCP-совместимым клиентам локальный справочный слой по HOI4 modding и инструменты для генерации файлов, читаемых игрой.
+[![GitHub Stars](https://img.shields.io/github/stars/czxieddan/RHoiScribe?style=for-the-badge&label=Stars)](https://github.com/czxieddan/RHoiScribe/stargazers)
+[![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=for-the-badge)](../LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2024-orange?style=for-the-badge)](../Cargo.toml)
+[![MCP](https://img.shields.io/badge/MCP-stdio-green?style=for-the-badge)](client-setup.md)
+
+Если RHoiScribe помогает вашему modding workflow, Star помогает другим авторам HOI4 mods найти проект.
+
+</div>
+
+RHoiScribe дает Codex, Claude Code и другим MCP-совместимым клиентам локальный справочный слой по HOI4 modding и инструменты для генерации файлов, читаемых игрой.
 
 Цель проекта проста: уменьшить лишнюю работу agents из-за повторного веб-поиска, устаревших предположений, небезопасных путей, пропущенной кодировки локализации и Paradox script, который выглядит правдоподобно, но не загружается в игре.
+
+## Environment
+
+| Area | Value |
+| --- | --- |
+| Server transport | MCP over stdio |
+| Implementation | Rust 2024 |
+| Build tool | Cargo |
+| Primary clients | Codex, Claude Code, MCP-compatible clients |
+| Runtime network | Not required for bundled prompts, resources, and tools |
+| Modding target | Hearts of Iron IV local mods |
 
 ## Для кого
 

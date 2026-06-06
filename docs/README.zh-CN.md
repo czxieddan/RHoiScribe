@@ -1,10 +1,34 @@
+<div align="center">
+
 # RHoiScribe
+
+面向 Hearts of Iron IV Modding Agents 的本地 MCP 服务器
 
 [English](../README.md) | [Русский](README.ru.md) | [日本語](README.ja.md)
 
-RHoiScribe 是一个面向 Hearts of Iron IV Modding AI agents 的本地 MCP 服务器。它为 Codex、Claude Code 和其他兼容 MCP 的客户端提供本地 HOI4 Modding 参考层，以及生成游戏可读文件的工具。
+[![GitHub Stars](https://img.shields.io/github/stars/czxieddan/RHoiScribe?style=for-the-badge&label=Stars)](https://github.com/czxieddan/RHoiScribe/stargazers)
+[![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=for-the-badge)](../LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2024-orange?style=for-the-badge)](../Cargo.toml)
+[![MCP](https://img.shields.io/badge/MCP-stdio-green?style=for-the-badge)](client-setup.md)
+
+如果 RHoiScribe 对你的 Modding 工作流有帮助，给仓库 Star 可以让更多 HOI4 Mod 作者发现它。
+
+</div>
+
+RHoiScribe 为 Codex、Claude Code 和其他兼容 MCP 的客户端提供本地 HOI4 Modding 参考层，以及生成游戏可读文件的工具。
 
 它的目标很明确：减少 agent 因重复联网搜索、过时假设、不安全路径、缺少本地化编码、以及“看起来像 Paradox 脚本但游戏无法加载”的内容造成的浪费。
+
+## 环境
+
+| 项目 | 内容 |
+| --- | --- |
+| 服务传输 | 基于 stdio 的 MCP |
+| 实现语言 | Rust 2024 |
+| 构建工具 | Cargo |
+| 主要客户端 | Codex、Claude Code、MCP-compatible clients |
+| 运行时联网 | 内置 prompts、resources、tools 不需要联网 |
+| Modding 目标 | Hearts of Iron IV 本地 Mod |
 
 ## 适合谁
 

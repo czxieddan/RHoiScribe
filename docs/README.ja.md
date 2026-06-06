@@ -1,10 +1,34 @@
+<div align="center">
+
 # RHoiScribe
+
+Hearts of Iron IV Modding Agents 向けのローカル MCP サーバー
 
 [English](../README.md) | [简体中文](README.zh-CN.md) | [Русский](README.ru.md)
 
-RHoiScribe は、Hearts of Iron IV の Modding を行う AI agents 向けのローカル MCP サーバーです。Codex、Claude Code、その他の MCP-compatible clients に、ローカルの HOI4 Modding 参照レイヤーと、ゲームが読めるファイルを生成する tools を提供します。
+[![GitHub Stars](https://img.shields.io/github/stars/czxieddan/RHoiScribe?style=for-the-badge&label=Stars)](https://github.com/czxieddan/RHoiScribe/stargazers)
+[![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=for-the-badge)](../LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2024-orange?style=for-the-badge)](../Cargo.toml)
+[![MCP](https://img.shields.io/badge/MCP-stdio-green?style=for-the-badge)](client-setup.md)
+
+RHoiScribe があなたの modding workflow に役立つなら、Star は他の HOI4 mod authors がこの project を見つける助けになります。
+
+</div>
+
+RHoiScribe は Codex、Claude Code、その他の MCP-compatible clients に、ローカルの HOI4 Modding 参照レイヤーと、ゲームが読めるファイルを生成する tools を提供します。
 
 目的は明確です。繰り返しの Web 検索、古い前提、安全でないパス、localisation のエンコーディング漏れ、そして「Paradox script らしく見えるがゲームでは読み込めない」内容による agent の無駄を減らします。
+
+## Environment
+
+| Area | Value |
+| --- | --- |
+| Server transport | MCP over stdio |
+| Implementation | Rust 2024 |
+| Build tool | Cargo |
+| Primary clients | Codex, Claude Code, MCP-compatible clients |
+| Runtime network | Not required for bundled prompts, resources, and tools |
+| Modding target | Hearts of Iron IV local mods |
 
 ## 対象ユーザー
 
