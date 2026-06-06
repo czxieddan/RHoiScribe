@@ -56,17 +56,6 @@ Generation tools must protect the target mod folder.
 - Use dry-run previews for new generation features before enabling write mode.
 - Preserve HOI4 localisation requirements, including UTF-8 BOM for generated `.yml` localisation files.
 
-## Documentation
-
-- Keep the root README focused on visitors and users.
-- Keep setup instructions in `docs/client-setup.md`.
-- Keep Codex, Claude Code, and generic MCP setup instructions available.
-- Do not add a standalone Roo Code section unless maintainers explicitly request it.
-- When changing README content, update:
-  - `docs/README.zh-CN.md`
-  - `docs/README.ru.md`
-  - `docs/README.ja.md`
-
 ## Licensing
 
 By contributing, you agree that your contribution is provided under the repository license in `LICENSE`.
