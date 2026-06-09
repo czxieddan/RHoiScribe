@@ -83,7 +83,7 @@ Agents can read local resources instead of starting from a blank prompt:
 - `rhoiscribe://hoi4/knowledge/catalog`
 - `rhoiscribe://hoi4/knowledge/<topic_id>`
 
-The knowledge catalog is structured for agent use. Topics contain category, file types, tags, syntax examples, relationships to other HOI4 systems, validation guidance, and source references. Current coverage includes script basics, scopes, triggers, effects, modifiers, variables, MTTH variables, unique identifier checks, arrays, localisation, scripted localisation, scripted triggers/effects, GUI, scripted GUI, focuses, events, detailed on_action scope families, decisions, missions, ideas, characters, history, map files, technology, equipment, units, AI, diplomacy, game rules, defines, bookmarks, audio, and common loading errors.
+The knowledge catalog is structured for agent use. Topics contain category, file types, tags, syntax examples, relationships to other HOI4 systems, validation guidance, and source references. Current coverage includes script basics, scopes, triggers, effects, modifiers, variables, MTTH variables, unique identifier checks, arrays, localisation, scripted localisation, scripted triggers/effects, GUI, scripted GUI, focuses, events, detailed on_action scope families, decisions, missions, ideas, characters, history, map files, technology, equipment, units, AI, diplomacy, game rules, defines, bookmarks, audio, game path discovery, debug launch checks, error log triage, and common loading errors.
 
 <h3 align="center">Tools</h3>
 
@@ -95,12 +95,18 @@ Agents can call tools for repeatable generation and validation:
 - `generate_decision_batch`
 - `search_hoi4_knowledge`
 - `scan_unique_identifiers`
+- `discover_hoi4_environment`
+- `validate_hoi4_debug_run`
+- `classify_error_log`
 - `validate_hoi4_paths`
 - `format_paradox_script`
 
 Generation tools support dry-run previews. In write mode they require an `output_root` and write paths relative to the target mod root.
 Knowledge search returns matching topic IDs and MCP resource URIs for queries such as `mtth variables`, `decision mission blocks`, or `on_actions FROM.FROM`.
 Identifier scanning checks batches of proposed new IDs against structured HOI4 definitions and reports duplicates, existing output files, and `replace_path` risks.
+Environment discovery finds the HOI4 install through Steam metadata first, then optional folder scanning, and reads `launcher-settings.json` for the document data path and game version.
+Debug-run validation checks the document `map`, `localisation`, and `history` folders, active launcher mod descriptors, the current playset, dependency descriptors, and the workspace mod path before an optional `hoi4.exe -gdpr-compliant -debug_mode` launch.
+Error-log classification groups `error.log` lines by likely HOI4 subsystem and links them back to changed paths when the agent has a diff or generated file list.
 
 <h2 align="center">Help Improve RHoiScribe</h2>
 
@@ -167,6 +173,35 @@ Example resource read:
 
 ```text
 rhoiscribe://hoi4/knowledge/scripted_gui.dynamic_lists
+```
+
+Example environment discovery call:
+
+```json
+{
+  "scan_fallback": true
+}
+```
+
+Example debug preflight call:
+
+```json
+{
+  "game_path": "<HOI4_GAME_PATH>",
+  "document_path": "<HOI4_DOCUMENT_PATH>",
+  "workspace_mod_path": "<MOD_OUTPUT_ROOT>",
+  "launch": false
+}
+```
+
+Example error log classification call:
+
+```json
+{
+  "error_log_path": "<HOI4_DOCUMENT_PATH>/logs/error.log",
+  "changed_paths": ["common/national_focus/CHI.txt"],
+  "limit": 5
+}
 ```
 
 Example `tools/call` arguments for a localisation dry run:

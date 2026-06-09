@@ -83,7 +83,7 @@ Agents 可以读取本地资源，而不是从空白提示开始：
 - `rhoiscribe://hoi4/knowledge/catalog`
 - `rhoiscribe://hoi4/knowledge/<topic_id>`
 
-知识目录为 agent 使用而结构化。Topic 包含分类、文件类型、标签、语法示例、与其他 HOI4 系统的关系、验证建议和来源引用。当前覆盖脚本基础、scope、trigger、effect、modifier、变量、MTTH 变量、唯一 ID 检查、数组、本地化、scripted localisation、scripted triggers/effects、GUI、scripted GUI、国策、事件、细分 on_action scope 家族、决议、任务、理念、角色、历史、地图文件、科技、装备、单位、AI、外交、游戏规则、defines、书签、音频和常见加载错误。
+知识目录为 agent 使用而结构化。Topic 包含分类、文件类型、标签、语法示例、与其他 HOI4 系统的关系、验证建议和来源引用。当前覆盖脚本基础、scope、trigger、effect、modifier、变量、MTTH 变量、唯一 ID 检查、数组、本地化、scripted localisation、scripted triggers/effects、GUI、scripted GUI、国策、事件、细分 on_action scope 家族、决议、任务、理念、角色、历史、地图文件、科技、装备、单位、AI、外交、游戏规则、defines、书签、音频、游戏路径发现、debug 启动检查、error.log 整理和常见加载错误。
 
 <h3 align="center">Tools</h3>
 
@@ -95,12 +95,18 @@ Agents 可以调用工具进行可重复的生成和验证：
 - `generate_decision_batch`
 - `search_hoi4_knowledge`
 - `scan_unique_identifiers`
+- `discover_hoi4_environment`
+- `validate_hoi4_debug_run`
+- `classify_error_log`
 - `validate_hoi4_paths`
 - `format_paradox_script`
 
 生成工具支持 dry-run 预览。写入模式需要 `output_root`，并且只按目标 Mod 根目录的相对路径写入。
 知识搜索会为 `mtth variables`、`decision mission blocks`、`on_actions FROM.FROM` 这类查询返回匹配 topic ID 和 MCP resource URI。
 唯一 ID 扫描会按结构化 HOI4 定义批量检查候选新 ID，并报告重复、已有输出文件和 `replace_path` 风险。
+环境发现会优先通过 Steam 元数据定位 HOI4 安装目录，再按需扫描文件夹，并从 `launcher-settings.json` 读取文档目录和游戏版本。
+Debug 启动检查会在可选启动 `hoi4.exe -gdpr-compliant -debug_mode` 前检查文档目录下的 `map`、`localisation`、`history` 文件夹、launcher mod 描述文件、当前播放集、依赖描述文件和工作区 mod 路径。
+Error log 分类会按可能的 HOI4 子系统整理 `error.log`，并在 agent 提供 diff 或生成文件列表时关联到对应变更路径。
 
 <h2 align="center">帮助改进 RHoiScribe</h2>
 
@@ -167,6 +173,35 @@ Codex、Claude Code 和通用 MCP 配置示例见 [client-setup.md](client-setup
 
 ```text
 rhoiscribe://hoi4/knowledge/scripted_gui.dynamic_lists
+```
+
+示例环境发现调用：
+
+```json
+{
+  "scan_fallback": true
+}
+```
+
+示例 debug 启动前检查：
+
+```json
+{
+  "game_path": "<HOI4_GAME_PATH>",
+  "document_path": "<HOI4_DOCUMENT_PATH>",
+  "workspace_mod_path": "<MOD_OUTPUT_ROOT>",
+  "launch": false
+}
+```
+
+示例 error.log 分类：
+
+```json
+{
+  "error_log_path": "<HOI4_DOCUMENT_PATH>/logs/error.log",
+  "changed_paths": ["common/national_focus/CHI.txt"],
+  "limit": 5
+}
 ```
 
 示例 `tools/call` 本地化 dry-run 参数：
