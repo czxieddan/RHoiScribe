@@ -1,3 +1,5 @@
+mod environment;
+mod error_log;
 mod unique_scan;
 
 use std::{borrow::Cow, error::Error, fmt, fs, path::Path};
@@ -8,6 +10,13 @@ use serde_json::{Map, Value, json};
 
 use crate::resources::{KNOWLEDGE_TOPIC_URI_PREFIX, KnowledgeCatalog};
 
+pub use environment::{
+    DiscoverHoi4EnvironmentRequest, Hoi4DebugRunRequest, Hoi4DebugRunResult, Hoi4EnvironmentResult,
+    Hoi4QualityCheck,
+};
+pub use error_log::{
+    ClassifyErrorLogRequest, ErrorLogCategory, ErrorLogClassificationResult, ErrorLogEntry,
+};
 pub use unique_scan::{
     CandidateScanResult, IdentifierCandidate, IdentifierMatch, PathRisk, ScanRoot,
     UniqueIdentifierScanRequest, UniqueIdentifierScanResult,
@@ -51,6 +60,24 @@ const TOOL_SPECS: &[ToolSpec] = &[
         title: "Scan unique identifiers",
         description: "Concurrently scan mod and game roots for structured HOI4 identifiers before creating new IDs, and report duplicate, overwrite, and replace_path risks.",
         required: &["roots", "candidates"],
+    },
+    ToolSpec {
+        name: "discover_hoi4_environment",
+        title: "Discover HOI4 environment",
+        description: "Find the HOI4 game directory through Steam metadata first, then optional folder scanning, and read launcher-settings.json for the document data path and game version.",
+        required: &[],
+    },
+    ToolSpec {
+        name: "validate_hoi4_debug_run",
+        title: "Validate HOI4 debug run",
+        description: "Check the game path, document data folders, launcher mod descriptors, active playset, dependency descriptors, and optionally launch hoi4.exe with debug arguments.",
+        required: &["game_path", "document_path", "workspace_mod_path"],
+    },
+    ToolSpec {
+        name: "classify_error_log",
+        title: "Classify HOI4 error log",
+        description: "Group error.log lines by likely HOI4 subsystem and link messages back to changed files when paths are provided.",
+        required: &["error_log_path"],
     },
     ToolSpec {
         name: "validate_hoi4_paths",
@@ -246,6 +273,24 @@ impl ToolCatalog {
                     ToolEngine::scan_unique_identifiers(request)?
                 )))
             }
+            "discover_hoi4_environment" => {
+                let request = parse_arguments::<DiscoverHoi4EnvironmentRequest>(arguments)?;
+                Ok(CallToolResult::structured(json!(
+                    ToolEngine::discover_hoi4_environment(request)?
+                )))
+            }
+            "validate_hoi4_debug_run" => {
+                let request = parse_arguments::<Hoi4DebugRunRequest>(arguments)?;
+                Ok(CallToolResult::structured(json!(
+                    ToolEngine::validate_hoi4_debug_run(request)
+                )))
+            }
+            "classify_error_log" => {
+                let request = parse_arguments::<ClassifyErrorLogRequest>(arguments)?;
+                Ok(CallToolResult::structured(json!(
+                    ToolEngine::classify_error_log(request)?
+                )))
+            }
             "validate_hoi4_paths" => {
                 let request = parse_arguments::<ValidateHoi4PathsRequest>(arguments)?;
                 Ok(CallToolResult::structured(json!(
@@ -428,6 +473,22 @@ impl ToolEngine {
         request: UniqueIdentifierScanRequest,
     ) -> Result<UniqueIdentifierScanResult, ToolError> {
         unique_scan::scan_unique_identifiers(request).map_err(ToolError::InvalidRequest)
+    }
+
+    pub fn discover_hoi4_environment(
+        request: DiscoverHoi4EnvironmentRequest,
+    ) -> Result<Hoi4EnvironmentResult, ToolError> {
+        environment::discover_hoi4_environment(request).map_err(ToolError::InvalidRequest)
+    }
+
+    pub fn validate_hoi4_debug_run(request: Hoi4DebugRunRequest) -> Hoi4DebugRunResult {
+        environment::validate_hoi4_debug_run(request)
+    }
+
+    pub fn classify_error_log(
+        request: ClassifyErrorLogRequest,
+    ) -> Result<ErrorLogClassificationResult, ToolError> {
+        error_log::classify_error_log(request).map_err(ToolError::InvalidRequest)
     }
 
     pub fn validate_hoi4_paths(request: ValidateHoi4PathsRequest) -> PathValidationResult {
