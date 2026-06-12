@@ -197,6 +197,9 @@ impl PromptCatalog {
              User request: {request}\n\
              Optional context:\n{optional_context}\n\
              Constraints:\n\
+             - Start by translating the user's goal into a verifiable checklist covering requested outcomes, affected files, unique IDs, expected game-readable output, and validation evidence.\n\
+             - Use RED/GREEN/VERIFY for tool or content changes: RED means define or run the check that would fail before the change when feasible; GREEN means create the smallest complete game-readable change; VERIFY means rerun fresh checks and inspect generated output before saying the task is complete.\n\
+             - Do not claim completion, safety, or compatibility without fresh verification evidence from the current workspace or from the generated dry-run output.\n\
              - Produce game-readable HOI4 mod content only.\n\
              - Priority order: current user request, then conventions discovered in the user's workspace, then bundled RHoiScribe resources, then official HOI4 defaults.\n\
              - Before choosing paths or names, inspect available workspace files and mirror existing folder depth, filename suffixes, tag prefixes, variable names, focus IDs, event namespaces, idea IDs, GUI element names, and localisation key style.\n\
@@ -282,4 +285,40 @@ fn required_string_argument<'a>(
 
 fn string_argument<'a>(arguments: &'a Map<String, Value>, name: &str) -> Option<&'a str> {
     arguments.get(name).and_then(Value::as_str)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Map, Value, json};
+
+    use super::PromptCatalog;
+
+    #[test]
+    fn rendered_prompts_require_red_green_verify_delivery() {
+        let arguments = Map::from_iter([("request".to_string(), json!("add a focus branch"))]);
+        let rendered = PromptCatalog::builtin()
+            .render("hoi4_mod_planner", &arguments)
+            .expect("prompt should render");
+        let text = serde_json::to_string(&rendered).expect("prompt should serialize");
+
+        assert!(text.contains("RED/GREEN/VERIFY"));
+        assert!(text.contains("verifiable checklist"));
+        assert!(text.contains("fresh verification"));
+    }
+
+    #[test]
+    fn rendered_prompts_keep_workspace_conventions_above_defaults() {
+        let arguments = Map::from_iter([(
+            "request".to_string(),
+            Value::String("write localisation".to_string()),
+        )]);
+        let rendered = PromptCatalog::builtin()
+            .render("hoi4_localisation_writer", &arguments)
+            .expect("prompt should render");
+        let text = serde_json::to_string(&rendered).expect("prompt should serialize");
+
+        assert!(text.contains("current user request"));
+        assert!(text.contains("workspace"));
+        assert!(text.contains("official HOI4 defaults"));
+    }
 }

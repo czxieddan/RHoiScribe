@@ -262,3 +262,70 @@ fn markdown_list(title: &str, items: &[String]) -> String {
 
     format!("## {}\n\n{}\n\n", title, list)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{KnowledgeCatalog, LATEST_UPDATE_URI, ResourceCatalog};
+
+    #[test]
+    fn latest_update_snapshot_tracks_hoi4_1_19_release() {
+        let resources = ResourceCatalog::load_embedded().expect("resources should load");
+        let latest = resources
+            .read_text(LATEST_UPDATE_URI)
+            .expect("latest update should be readable");
+
+        assert!(latest.contains("Snapshot date: 2026-06-12"));
+        assert!(latest.contains("1.19.0"));
+        assert!(latest.contains("1.19.0.1"));
+        assert!(latest.contains("Thunder at Our Gates"));
+    }
+
+    #[test]
+    fn workflow_topic_documents_red_green_verify_delivery() {
+        let catalog = KnowledgeCatalog::load_embedded().expect("catalog should load");
+        let topic = catalog
+            .topic("workflow.agent_delivery_rules")
+            .expect("workflow topic should exist");
+        let searchable = format!(
+            "{} {} {}",
+            topic.body,
+            topic.tags.join(" "),
+            topic.validation.join(" ")
+        );
+
+        assert!(searchable.contains("RED/GREEN/VERIFY"));
+        assert!(searchable.contains("verifiable checklist"));
+        assert!(searchable.contains("fresh verification"));
+    }
+
+    #[test]
+    fn visitor_docs_explain_skill_packages_and_direct_commands() {
+        let docs = [
+            include_str!("../../README.md"),
+            include_str!("../../docs/README.zh-CN.md"),
+            include_str!("../../docs/README.ru.md"),
+            include_str!("../../docs/README.ja.md"),
+            include_str!("../../docs/client-setup.md"),
+        ];
+
+        for doc in docs {
+            assert!(doc.contains("SKILL.md"));
+            assert!(doc.contains("--skill list-tools"));
+            assert!(doc.contains("--skill list-resources"));
+            assert!(doc.contains("--skill list-prompts"));
+        }
+
+        assert!(
+            include_str!("../../docs/client-setup.md")
+                .contains("rhoiscribe-skill-windows-x86_64.zip")
+        );
+        assert!(
+            include_str!("../../docs/client-setup.md")
+                .contains("rhoiscribe-skill-linux-x86_64.zip")
+        );
+        assert!(
+            include_str!("../../docs/client-setup.md")
+                .contains("rhoiscribe-skill-macos-universal.zip")
+        );
+    }
+}

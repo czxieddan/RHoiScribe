@@ -122,6 +122,14 @@ Knowledge catalog の拡張、examples の改善、生成、検証、project sca
 - Linux: `rhoiscribe-linux-x86_64`
 - macOS: `rhoiscribe-macos-universal`
 
+agent が Skill folder を読める場合は、対応する Skill package も使えます。
+
+- Windows: `rhoiscribe-skill-windows-x86_64.zip`
+- Linux: `rhoiscribe-skill-linux-x86_64.zip`
+- macOS: `rhoiscribe-skill-macos-universal.zip`
+
+安定したフォルダーに展開してください。Package には `SKILL.md` と対象 platform の executable が入っているため、MCP server を設定しなくても agent が RHoiScribe を直接使えます。
+
 ダウンロードしたファイルは、移動しない安定したフォルダーに置いてください。Linux と macOS で実行権限を求められた場合は、ダウンロードしたファイルに `chmod +x` を実行します。
 
 ローカル Cargo build が必要な場合だけ source からビルドします。
@@ -154,6 +162,19 @@ stdio MCP server を手動で起動したい場合だけ直接実行します。
 ```bash
 ./rhoiscribe-linux-x86_64
 ./rhoiscribe-macos-universal
+```
+
+Skill package は JSON output 用に直接呼び出すこともできます。
+
+```powershell
+.\rhoiscribe-windows-x86_64.exe --skill list-tools
+.\rhoiscribe-windows-x86_64.exe --skill list-resources
+.\rhoiscribe-windows-x86_64.exe --skill list-prompts
+.\rhoiscribe-windows-x86_64.exe --skill read-resource "rhoiscribe://hoi4/latest-update"
+```
+
+```bash
+./rhoiscribe-linux-x86_64 --skill call-tool "search_hoi4_knowledge" '{"query":"on_actions ROOT FROM"}'
 ```
 
 Codex、Claude Code、汎用 MCP 設定例は [client-setup.md](client-setup.md) を参照してください。

@@ -122,6 +122,14 @@ Pull requests приветствуются для расширения knowledge
 - Linux: `rhoiscribe-linux-x86_64`
 - macOS: `rhoiscribe-macos-universal`
 
+Если ваш agent умеет читать Skill folder, скачайте Skill package для своей платформы:
+
+- Windows: `rhoiscribe-skill-windows-x86_64.zip`
+- Linux: `rhoiscribe-skill-linux-x86_64.zip`
+- macOS: `rhoiscribe-skill-macos-universal.zip`
+
+Распакуйте его в постоянную папку. В package находятся `SKILL.md` и подходящий executable, поэтому agent может использовать RHoiScribe напрямую без настройки MCP server.
+
 Поместите скачанный файл в постоянную папку. В Linux и macOS выполните `chmod +x` для скачанного файла, если система просит разрешение на запуск.
 
 Собирайте из исходников только если нужен локальный Cargo build:
@@ -154,6 +162,19 @@ Source build помещает исполняемый файл в `<ABSOLUTE_PATH
 ```bash
 ./rhoiscribe-linux-x86_64
 ./rhoiscribe-macos-universal
+```
+
+Skill packages также можно вызывать напрямую для JSON output:
+
+```powershell
+.\rhoiscribe-windows-x86_64.exe --skill list-tools
+.\rhoiscribe-windows-x86_64.exe --skill list-resources
+.\rhoiscribe-windows-x86_64.exe --skill list-prompts
+.\rhoiscribe-windows-x86_64.exe --skill read-resource "rhoiscribe://hoi4/latest-update"
+```
+
+```bash
+./rhoiscribe-linux-x86_64 --skill call-tool "search_hoi4_knowledge" '{"query":"on_actions ROOT FROM"}'
 ```
 
 Примеры конфигурации для Codex, Claude Code и generic MCP см. в [client-setup.md](client-setup.md).

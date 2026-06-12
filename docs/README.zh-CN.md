@@ -122,6 +122,14 @@ HOI4 语法和 Modding 实践会随着游戏版本持续变化。如果你发现
 - Linux: `rhoiscribe-linux-x86_64`
 - macOS: `rhoiscribe-macos-universal`
 
+如果你的 agent 可以读取 Skill 文件夹，也可以下载对应平台的 Skill 包：
+
+- Windows: `rhoiscribe-skill-windows-x86_64.zip`
+- Linux: `rhoiscribe-skill-linux-x86_64.zip`
+- macOS: `rhoiscribe-skill-macos-universal.zip`
+
+解压到稳定目录即可。压缩包包含 `SKILL.md` 和对应平台的可执行文件；不配置 MCP server 时，agent 也能直接使用 RHoiScribe。
+
 把下载的文件放在一个稳定目录。Linux 和 macOS 如果提示没有执行权限，对下载文件运行 `chmod +x`。
 
 只有当你需要本地 Cargo 构建时才从源码构建：
@@ -154,6 +162,19 @@ Linux 和 macOS 对下载文件执行同一个参数：
 ```bash
 ./rhoiscribe-linux-x86_64
 ./rhoiscribe-macos-universal
+```
+
+Skill 包也可以直接输出 JSON：
+
+```powershell
+.\rhoiscribe-windows-x86_64.exe --skill list-tools
+.\rhoiscribe-windows-x86_64.exe --skill list-resources
+.\rhoiscribe-windows-x86_64.exe --skill list-prompts
+.\rhoiscribe-windows-x86_64.exe --skill read-resource "rhoiscribe://hoi4/latest-update"
+```
+
+```bash
+./rhoiscribe-linux-x86_64 --skill call-tool "search_hoi4_knowledge" '{"query":"on_actions ROOT FROM"}'
 ```
 
 Codex、Claude Code 和通用 MCP 配置示例见 [client-setup.md](client-setup.md)。

@@ -8,6 +8,14 @@ Download a prebuilt binary from [GitHub Releases](https://github.com/czxieddan/R
 - Linux: `rhoiscribe-linux-x86_64`
 - macOS: `rhoiscribe-macos-universal`
 
+Skill packages are available for agents that can read a local Skill folder:
+
+- Windows: `rhoiscribe-skill-windows-x86_64.zip`
+- Linux: `rhoiscribe-skill-linux-x86_64.zip`
+- macOS: `rhoiscribe-skill-macos-universal.zip`
+
+Each Skill package contains `SKILL.md` and the matching executable. Use it when you want direct agent access to RHoiScribe prompts, resources, and tools without adding an MCP server entry.
+
 Keep the downloaded file in a stable folder. On Linux and macOS, run `chmod +x` on the downloaded file if the system asks for executable permission.
 
 Build from source only when you want a local Cargo build:
@@ -38,6 +46,24 @@ macOS:
 
 ```bash
 ./rhoiscribe-macos-universal --print-command
+```
+
+Direct Skill commands return JSON and expose the same prompts, resources, and tools as the MCP server:
+
+```powershell
+.\rhoiscribe-windows-x86_64.exe --skill list-tools
+.\rhoiscribe-windows-x86_64.exe --skill list-resources
+.\rhoiscribe-windows-x86_64.exe --skill list-prompts
+.\rhoiscribe-windows-x86_64.exe --skill read-resource "rhoiscribe://hoi4/latest-update"
+.\rhoiscribe-windows-x86_64.exe --skill call-tool "search_hoi4_knowledge" '{ "query": "on_actions ROOT FROM" }'
+```
+
+```bash
+./rhoiscribe-linux-x86_64 --skill list-tools
+./rhoiscribe-linux-x86_64 --skill list-resources
+./rhoiscribe-linux-x86_64 --skill list-prompts
+./rhoiscribe-linux-x86_64 --skill read-resource "rhoiscribe://hoi4/latest-update"
+./rhoiscribe-linux-x86_64 --skill call-tool "search_hoi4_knowledge" '{"query":"on_actions ROOT FROM"}'
 ```
 
 Expected binary paths:
