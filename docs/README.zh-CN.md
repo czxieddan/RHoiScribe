@@ -65,6 +65,14 @@ RHoiScribe 为 Codex、Claude Code 和其他兼容 MCP 的客户端提供本地 
 
 RHoiScribe 为 agents 提供本地 HOI4 知识层、可复用 prompts，以及面向常见 Modding 工作的文件工具。配置 MCP server 后，客户端可以通过标准 MCP list 方法发现完整 prompts、resources 和 tools。
 
+概括来说，它能帮助 agent 完成：
+
+- 大范围编辑前的项目结构与引用关系感知
+- 交付前的红/黄/绿加载风险检查
+- 编码、格式和媒体规范的快速校对
+- 在尊重工作区既有规范的前提下安全修改现有文件
+- 用户批准后进行实验性 GUI/GFX 程序化资产制作
+
 如果你的 agent 更适合读取本地 Skill 文件夹，对应平台的 Skill 包也会暴露同一套能力，不需要额外配置 MCP server。
 
 <h2 align="center">帮助改进 RHoiScribe</h2>

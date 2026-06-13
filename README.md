@@ -65,6 +65,14 @@ The goal is simple: reduce wasted agent work caused by repeated web searches, st
 
 RHoiScribe gives agents a local HOI4 knowledge layer, reusable prompts, and file-oriented tools for common modding work. MCP clients can discover the exact prompts, resources, and tools through the standard MCP list methods after the server is configured.
 
+At a high level, it helps agents with:
+
+- project structure and reference awareness before broad edits
+- red/yellow/green checks for load-risk issues before delivery
+- fast encoding, formatting, and media convention checks
+- safe edits to existing files while respecting workspace conventions
+- experimental GUI/GFX asset creation when the user approves new procedural art
+
 The bundled Skill package exposes the same capabilities for agents that prefer a local Skill folder instead of an MCP server entry.
 
 <h2 align="center">Help Improve RHoiScribe</h2>
