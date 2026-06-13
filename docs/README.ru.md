@@ -73,7 +73,7 @@ RHoiScribe дает agents локальный слой знаний HOI4, reusab
 - безопасным редактированием существующих файлов с учетом workspace conventions
 - experimental GUI/GFX asset creation после user approval на новую procedural art
 
-Skill package для нужной платформы предоставляет те же возможности для agents, которым удобнее читать локальную Skill folder без отдельной записи MCP server.
+Skill package для нужной платформы предоставляет те же возможности для agents, которым удобнее читать локальную Skill folder без отдельной записи в MCP server.
 
 <h2 align="center">Помогите улучшить RHoiScribe</h2>
 

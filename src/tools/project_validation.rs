@@ -1,12 +1,15 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::{Path, PathBuf},
+    path::Path,
+    sync::Arc,
+    thread,
 };
 
 use serde::{Deserialize, Serialize};
 
 use super::paradox_lexer::{TokenKind, tokenize};
+use super::project_files::{ProjectFile, collect_project_files};
 use super::{ProjectIndexItem, ProjectIndexRequest, ScanRoot, project_index};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -163,59 +166,11 @@ fn check_brace_balance(
     roots: &[ScanRoot],
     checks: &mut Vec<ProjectValidationCheck>,
 ) -> Result<(), String> {
-    for file in collect_files(roots)? {
-        if !is_paradox_text_file(&file.relative_path) {
-            continue;
-        }
-
-        let Ok(content) = fs::read_to_string(&file.absolute_path) else {
-            continue;
-        };
-        let mut depth = 0isize;
-        let mut first_underflow = None;
-        let mut last_line = 1usize;
-
-        for token in tokenize(&content) {
-            last_line = token.line;
-            match token.kind {
-                TokenKind::Open => depth += 1,
-                TokenKind::Close => {
-                    depth -= 1;
-                    if depth < 0 && first_underflow.is_none() {
-                        first_underflow = Some(token.line);
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        if let Some(line) = first_underflow {
-            checks.push(check(
-                "brace_balance",
-                "red",
-                "error",
-                &file.relative_path,
-                line,
-                "Closing brace appears before a matching opening brace.",
-                Some(
-                    "Remove the extra closing brace or add the missing opening block.".to_string(),
-                ),
-            ));
-        } else if depth != 0 {
-            checks.push(check(
-                "brace_balance",
-                "red",
-                "error",
-                &file.relative_path,
-                last_line,
-                &format!(
-                    "Brace balance ends at {}; HOI4 will not parse this file reliably.",
-                    depth
-                ),
-                Some("Add or remove braces until the file ends at depth 0.".to_string()),
-            ));
-        }
-    }
+    let files = collect_files(roots)?
+        .into_iter()
+        .filter(|file| is_paradox_text_file(&file.relative_path))
+        .collect::<Vec<_>>();
+    checks.extend(parallel_file_checks(files, brace_balance_checks)?);
 
     Ok(())
 }
@@ -335,25 +290,88 @@ fn check_missing_localisation(
     let defined_keys = definitions
         .iter()
         .filter(|definition| definition.kind == "localisation_key")
-        .map(|definition| definition.name.as_str())
+        .map(|definition| definition.name.clone())
         .collect::<HashSet<_>>();
+    let defined_keys = Arc::new(defined_keys);
 
-    for file in collect_files(roots)? {
-        if !is_script_with_localisation_refs(&file.relative_path) {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(&file.absolute_path) else {
-            continue;
-        };
+    let files = collect_files(roots)?
+        .into_iter()
+        .filter(|file| is_script_with_localisation_refs(&file.relative_path))
+        .collect::<Vec<_>>();
+    checks.extend(parallel_file_checks(files, move |file| {
+        missing_localisation_checks(file, &defined_keys)
+    })?);
 
-        let is_txt = extension_is(&file.relative_path, "txt");
+    Ok(())
+}
 
-        for (key, value, line) in localisation_references(&content, is_txt) {
-            if defined_keys.contains(value.as_str()) || is_inline_or_builtin_loc_value(&value) {
-                continue;
+fn brace_balance_checks(file: ProjectFile) -> Vec<ProjectValidationCheck> {
+    let Ok(content) = fs::read_to_string(&file.absolute_path) else {
+        return Vec::new();
+    };
+    let mut depth = 0isize;
+    let mut first_underflow = None;
+    let mut last_line = 1usize;
+
+    for token in tokenize(&content) {
+        last_line = token.line;
+        match token.kind {
+            TokenKind::Open => depth += 1,
+            TokenKind::Close => {
+                depth -= 1;
+                if depth < 0 && first_underflow.is_none() {
+                    first_underflow = Some(token.line);
+                }
             }
+            _ => {}
+        }
+    }
 
-            checks.push(check(
+    if let Some(line) = first_underflow {
+        return vec![check(
+            "brace_balance",
+            "red",
+            "error",
+            &file.relative_path,
+            line,
+            "Closing brace appears before a matching opening brace.",
+            Some("Remove the extra closing brace or add the missing opening block.".to_string()),
+        )];
+    }
+    if depth != 0 {
+        return vec![check(
+            "brace_balance",
+            "red",
+            "error",
+            &file.relative_path,
+            last_line,
+            &format!(
+                "Brace balance ends at {}; HOI4 will not parse this file reliably.",
+                depth
+            ),
+            Some("Add or remove braces until the file ends at depth 0.".to_string()),
+        )];
+    }
+
+    Vec::new()
+}
+
+fn missing_localisation_checks(
+    file: ProjectFile,
+    defined_keys: &HashSet<String>,
+) -> Vec<ProjectValidationCheck> {
+    let Ok(content) = fs::read_to_string(&file.absolute_path) else {
+        return Vec::new();
+    };
+
+    let is_txt = extension_is(&file.relative_path, "txt");
+    localisation_references(&content, is_txt)
+        .into_iter()
+        .filter(|(_, value, _)| {
+            !defined_keys.contains(value.as_str()) && !is_inline_or_builtin_loc_value(value)
+        })
+        .map(|(key, value, line)| {
+            check(
                 "missing_localisation",
                 "yellow",
                 "warning",
@@ -364,11 +382,9 @@ fn check_missing_localisation(
                     key, value
                 ),
                 Some(format!("Add localisation key `{}` or update the script reference.", value)),
-            ));
-        }
-    }
-
-    Ok(())
+            )
+        })
+        .collect()
 }
 
 fn localisation_references(content: &str, is_txt: bool) -> Vec<(String, String, usize)> {
@@ -414,68 +430,61 @@ fn check(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ProjectFile {
-    absolute_path: PathBuf,
-    relative_path: String,
+fn collect_files(roots: &[ScanRoot]) -> Result<Vec<ProjectFile>, String> {
+    collect_project_files(roots, should_validate_file)
 }
 
-fn collect_files(roots: &[ScanRoot]) -> Result<Vec<ProjectFile>, String> {
-    let mut files = Vec::new();
-
-    for root in roots {
-        let root_path = PathBuf::from(&root.path);
-        if !root_path.is_dir() {
-            return Err(format!("project root is not a directory: {}", root.path));
-        }
-
-        let mut pending = vec![root_path.clone()];
-        while let Some(path) = pending.pop() {
-            let entries = fs::read_dir(&path)
-                .map_err(|error| format!("failed to read {}: {}", path.display(), error))?;
-
-            for entry in entries {
-                let entry = entry.map_err(|error| error.to_string())?;
-                let entry_path = entry.path();
-                let file_type = entry.file_type().map_err(|error| error.to_string())?;
-
-                if file_type.is_dir() {
-                    if should_descend(&entry_path) {
-                        pending.push(entry_path);
-                    }
-                    continue;
-                }
-                if !file_type.is_file() {
-                    continue;
-                }
-
-                let relative_path = entry_path
-                    .strip_prefix(&root_path)
-                    .unwrap_or(&entry_path)
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                if should_validate_file(&relative_path) {
-                    files.push(ProjectFile {
-                        absolute_path: entry_path,
-                        relative_path,
-                    });
-                }
-            }
-        }
+fn parallel_file_checks<F>(
+    files: Vec<ProjectFile>,
+    checker: F,
+) -> Result<Vec<ProjectValidationCheck>, String>
+where
+    F: Fn(ProjectFile) -> Vec<ProjectValidationCheck> + Send + Sync + 'static,
+{
+    if files.is_empty() {
+        return Ok(Vec::new());
     }
 
-    Ok(files)
+    let worker_count = worker_count(files.len());
+    let chunk_size = files.len().div_ceil(worker_count);
+    let files = Arc::new(files);
+    let checker = Arc::new(checker);
+    let mut handles = Vec::new();
+
+    for chunk_start in (0..files.len()).step_by(chunk_size) {
+        let files = Arc::clone(&files);
+        let checker = Arc::clone(&checker);
+        handles.push(thread::spawn(move || {
+            let chunk_end = (chunk_start + chunk_size).min(files.len());
+            let mut checks = Vec::new();
+            for file in &files[chunk_start..chunk_end] {
+                checks.extend(checker(file.clone()));
+            }
+            checks
+        }));
+    }
+
+    let mut checks = Vec::new();
+    for handle in handles {
+        checks.extend(
+            handle
+                .join()
+                .map_err(|_| "project validation worker panicked".to_string())?,
+        );
+    }
+    Ok(checks)
 }
 
-fn should_descend(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
+fn worker_count(file_count: usize) -> usize {
+    if file_count == 0 {
+        return 1;
+    }
 
-    !matches!(
-        name.to_ascii_lowercase().as_str(),
-        ".git" | "target" | "plans" | "tests" | "scripts" | ".idea" | ".vscode" | ".superpowers"
-    )
+    thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(file_count)
+        .max(1)
 }
 
 fn should_validate_file(relative_path: &str) -> bool {

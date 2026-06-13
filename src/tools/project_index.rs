@@ -1,14 +1,10 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::Arc,
-    thread,
-};
+use std::{fs, path::Path, sync::Arc, thread};
 
 use serde::{Deserialize, Serialize};
 
 use super::ScanRoot;
 use super::paradox_lexer::{Token, TokenKind, tokenize};
+use super::project_files::{ProjectFile, collect_project_files};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectIndexRequest {
@@ -50,7 +46,7 @@ pub struct ProjectIndexResult {
 struct ScanFile {
     root: String,
     root_role: Option<String>,
-    absolute_path: PathBuf,
+    absolute_path: std::path::PathBuf,
     relative_path: String,
     file_type: String,
     bytes: u64,
@@ -115,57 +111,8 @@ pub fn index_hoi4_project(request: ProjectIndexRequest) -> Result<ProjectIndexRe
 }
 
 fn collect_scan_files(roots: &[ScanRoot]) -> Result<Vec<ScanFile>, String> {
-    let mut files = Vec::new();
-
-    for root in roots {
-        let root_path = PathBuf::from(&root.path);
-        if !root_path.exists() {
-            return Err(format!("project root does not exist: {}", root.path));
-        }
-        if !root_path.is_dir() {
-            return Err(format!("project root is not a directory: {}", root.path));
-        }
-
-        let mut pending = vec![root_path.clone()];
-        while let Some(path) = pending.pop() {
-            let entries = fs::read_dir(&path)
-                .map_err(|error| format!("failed to read {}: {}", path.display(), error))?;
-
-            for entry in entries {
-                let entry = entry.map_err(|error| error.to_string())?;
-                let entry_path = entry.path();
-                let file_type = entry.file_type().map_err(|error| error.to_string())?;
-
-                if file_type.is_dir() {
-                    if should_descend(&entry_path) {
-                        pending.push(entry_path);
-                    }
-                    continue;
-                }
-
-                if !file_type.is_file() {
-                    continue;
-                }
-
-                let relative_path = relative_path(&root_path, &entry_path);
-                if !should_index_file(&relative_path) {
-                    continue;
-                }
-
-                let metadata = entry.metadata().map_err(|error| error.to_string())?;
-                files.push(ScanFile {
-                    root: root.path.clone(),
-                    root_role: root.role.clone(),
-                    absolute_path: entry_path,
-                    file_type: file_type_name(&relative_path),
-                    relative_path,
-                    bytes: metadata.len(),
-                });
-            }
-        }
-    }
-
-    Ok(files)
+    collect_project_files(roots, should_index_file)
+        .map(|files| files.into_iter().map(scan_file_from_project_file).collect())
 }
 
 fn scan_files_parallel(
@@ -565,17 +512,6 @@ fn is_assignment(tokens: &[Token], index: usize) -> bool {
         && matches!(tokens[index + 2].kind, TokenKind::Word | TokenKind::String)
 }
 
-fn should_descend(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-
-    !matches!(
-        name.to_ascii_lowercase().as_str(),
-        ".git" | "target" | "plans" | "tests" | "scripts" | ".idea" | ".vscode" | ".superpowers"
-    )
-}
-
 fn should_index_file(relative_path: &str) -> bool {
     let normalized = relative_path.replace('\\', "/");
     if normalized == "descriptor.mod" || normalized.ends_with(".mod") {
@@ -643,11 +579,16 @@ fn file_type_name(relative_path: &str) -> String {
         .to_ascii_lowercase()
 }
 
-fn relative_path(root: &Path, file: &Path) -> String {
-    file.strip_prefix(root)
-        .unwrap_or(file)
-        .to_string_lossy()
-        .replace('\\', "/")
+fn scan_file_from_project_file(file: ProjectFile) -> ScanFile {
+    let file_type = file_type_name(&file.relative_path);
+    ScanFile {
+        root: file.root,
+        root_role: file.root_role,
+        absolute_path: file.absolute_path,
+        relative_path: file.relative_path,
+        file_type,
+        bytes: file.bytes,
+    }
 }
 
 fn worker_count(file_count: usize) -> usize {

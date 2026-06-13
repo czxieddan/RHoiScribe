@@ -1,12 +1,17 @@
-use std::{fs, path::Path};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 
 use super::format_paradox_script;
+use super::paradox_lexer::{TokenKind, tokenize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EditHoi4ScriptFileRequest {
     pub path: String,
+    pub workspace_root: Option<String>,
     pub operation: ScriptEditOperation,
     pub dry_run: bool,
     pub format: Option<bool>,
@@ -37,23 +42,6 @@ pub struct EditHoi4ScriptFileResult {
     pub messages: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TokenKind {
-    Word,
-    String,
-    Equals,
-    Open,
-    Close,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Token {
-    kind: TokenKind,
-    text: String,
-    start: usize,
-    end: usize,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct BlockSpan {
     name: String,
@@ -65,17 +53,19 @@ struct BlockSpan {
 pub fn edit_hoi4_script_file(
     request: EditHoi4ScriptFileRequest,
 ) -> Result<EditHoi4ScriptFileResult, String> {
-    let path = Path::new(&request.path);
+    let path = validate_workspace_script_path(
+        Path::new(&request.path),
+        request.workspace_root.as_deref(),
+    )?;
     if !path.is_file() {
         return Err(format!("script file does not exist: {}", request.path));
     }
-    if !is_supported_script_path(path) {
+    if !is_supported_script_path(&path) {
         return Err("only HOI4 txt/gui/gfx/lua script files can be edited".to_string());
     }
 
     let bytes =
-        fs::read(path).map_err(|error| format!("failed to read {}: {}", request.path, error))?;
-    let had_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
+        fs::read(&path).map_err(|error| format!("failed to read {}: {}", request.path, error))?;
     let body = strip_bom(&bytes);
     let text = String::from_utf8(body.to_vec())
         .map_err(|error| format!("script file must be valid UTF-8: {}", error))?;
@@ -100,9 +90,8 @@ pub fn edit_hoi4_script_file(
     };
     ensure_balanced_braces(&formatted)?;
 
-    let should_have_bom = should_have_utf8_bom(path);
     let mut output = Vec::new();
-    if should_have_bom || (had_bom && !should_have_utf8_without_bom(path)) {
+    if should_have_utf8_bom(&path) {
         output.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
     }
     output.extend_from_slice(formatted.as_bytes());
@@ -110,7 +99,7 @@ pub fn edit_hoi4_script_file(
     let applied = changed && !request.dry_run;
 
     if applied {
-        fs::write(path, &output)
+        fs::write(&path, &output)
             .map_err(|error| format!("failed to write {}: {}", request.path, error))?;
     }
 
@@ -118,7 +107,7 @@ pub fn edit_hoi4_script_file(
         dry_run: request.dry_run,
         applied,
         changed,
-        path: request.path,
+        path: path.to_string_lossy().to_string(),
         encoding: if output.starts_with(&[0xEF, 0xBB, 0xBF]) {
             "utf-8-bom".to_string()
         } else {
@@ -280,97 +269,6 @@ fn ensure_balanced_braces(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn tokenize(content: &str) -> Vec<Token> {
-    let mut tokens = Vec::new();
-    let bytes = content.as_bytes();
-    let mut index = 0usize;
-
-    while index < bytes.len() {
-        match bytes[index] as char {
-            '#' => {
-                while index < bytes.len() && bytes[index] as char != '\n' {
-                    index += 1;
-                }
-            }
-            '"' => {
-                let start = index;
-                index += 1;
-                let mut text = String::new();
-                let mut escaped = false;
-                while index < bytes.len() {
-                    let character = bytes[index] as char;
-                    index += 1;
-                    if escaped {
-                        text.push(character);
-                        escaped = false;
-                        continue;
-                    }
-                    if character == '\\' {
-                        escaped = true;
-                        continue;
-                    }
-                    if character == '"' {
-                        break;
-                    }
-                    text.push(character);
-                }
-                tokens.push(Token {
-                    kind: TokenKind::String,
-                    text,
-                    start,
-                    end: index,
-                });
-            }
-            '=' => {
-                tokens.push(Token {
-                    kind: TokenKind::Equals,
-                    text: "=".to_string(),
-                    start: index,
-                    end: index + 1,
-                });
-                index += 1;
-            }
-            '{' => {
-                tokens.push(Token {
-                    kind: TokenKind::Open,
-                    text: "{".to_string(),
-                    start: index,
-                    end: index + 1,
-                });
-                index += 1;
-            }
-            '}' => {
-                tokens.push(Token {
-                    kind: TokenKind::Close,
-                    text: "}".to_string(),
-                    start: index,
-                    end: index + 1,
-                });
-                index += 1;
-            }
-            character if character.is_whitespace() => index += 1,
-            _ => {
-                let start = index;
-                while index < bytes.len() {
-                    let character = bytes[index] as char;
-                    if character.is_whitespace() || matches!(character, '=' | '{' | '}' | '#') {
-                        break;
-                    }
-                    index += 1;
-                }
-                tokens.push(Token {
-                    kind: TokenKind::Word,
-                    text: content[start..index].to_string(),
-                    start,
-                    end: index,
-                });
-            }
-        }
-    }
-
-    tokens
-}
-
 fn is_supported_script_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -382,13 +280,38 @@ fn is_supported_script_path(path: &Path) -> bool {
         })
 }
 
+fn validate_workspace_script_path(
+    path: &Path,
+    requested_workspace_root: Option<&str>,
+) -> Result<PathBuf, String> {
+    let workspace_root = workspace_root(requested_workspace_root)?;
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|error| format!("script file does not exist or is not accessible: {}", error))?;
+    if !canonical_path.starts_with(&workspace_root) {
+        return Err(format!(
+            "script file must be inside workspace root `{}`",
+            workspace_root.display()
+        ));
+    }
+    Ok(canonical_path)
+}
+
+fn workspace_root(requested_workspace_root: Option<&str>) -> Result<PathBuf, String> {
+    let root = if let Some(root) = requested_workspace_root {
+        PathBuf::from(root)
+    } else if let Some(root) = env::var_os("RHOISCRIBE_WORKSPACE_ROOT") {
+        PathBuf::from(root)
+    } else {
+        env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    };
+    root.canonicalize()
+        .map_err(|error| format!("workspace root is not accessible: {}", error))
+}
+
 fn should_have_utf8_bom(path: &Path) -> bool {
     let normalized = path.to_string_lossy().replace('\\', "/");
     normalized.contains("/localisation/") || normalized.ends_with("/interface/credits.txt")
-}
-
-fn should_have_utf8_without_bom(path: &Path) -> bool {
-    !should_have_utf8_bom(path)
 }
 
 fn strip_bom(bytes: &[u8]) -> &[u8] {
@@ -416,6 +339,7 @@ mod tests {
 
         let result = edit_hoi4_script_file(EditHoi4ScriptFileRequest {
             path: path.to_string_lossy().to_string(),
+            workspace_root: Some(root.to_string_lossy().to_string()),
             operation: ScriptEditOperation::ReplaceNamedBlock {
                 block_name: "CHI_old_decision".to_string(),
                 content: "CHI_old_decision = { complete_effect = { add_political_power = 25 } }"
@@ -447,6 +371,7 @@ mod tests {
 
         let result = edit_hoi4_script_file(EditHoi4ScriptFileRequest {
             path: path.to_string_lossy().to_string(),
+            workspace_root: Some(root.to_string_lossy().to_string()),
             operation: ScriptEditOperation::InsertIntoBlock {
                 parent_block: "effects".to_string(),
                 content: "CHI_new_effect = { add_stability = 0.05 }".to_string(),
@@ -479,6 +404,7 @@ mod tests {
 
         let error = edit_hoi4_script_file(EditHoi4ScriptFileRequest {
             path: path.to_string_lossy().to_string(),
+            workspace_root: Some(root.to_string_lossy().to_string()),
             operation: ScriptEditOperation::InsertIntoBlock {
                 parent_block: "CHI_category".to_string(),
                 content: "CHI_decision = { complete_effect = { add_political_power = 5 } }"
@@ -495,6 +421,58 @@ mod tests {
         fs::remove_dir_all(root).expect("temp output should clean up");
     }
 
+    #[test]
+    fn rejects_paths_outside_workspace_root() {
+        let workspace = unique_temp_dir();
+        let outside = unique_temp_dir();
+        let path = outside.join("common/decisions/CHI_decisions.txt");
+        write_file(&path, "CHI_category = {\n}\n");
+
+        let error = edit_hoi4_script_file(EditHoi4ScriptFileRequest {
+            path: path.to_string_lossy().to_string(),
+            workspace_root: Some(workspace.to_string_lossy().to_string()),
+            operation: ScriptEditOperation::InsertIntoBlock {
+                parent_block: "CHI_category".to_string(),
+                content: "CHI_decision = { available = { always = yes } }".to_string(),
+                position: Some("end".to_string()),
+            },
+            dry_run: true,
+            format: Some(false),
+        })
+        .expect_err("workspace escape should fail");
+
+        assert!(error.contains("inside workspace root"));
+
+        fs::remove_dir_all(workspace).expect("workspace temp should clean up");
+        fs::remove_dir_all(outside).expect("outside temp should clean up");
+    }
+
+    #[test]
+    fn handles_multibyte_utf8_tokens_without_panicking() {
+        let root = unique_temp_dir();
+        let path = root.join("common/scripted_effects/CHI_effects.txt");
+        write_file(
+            &path,
+            "effects = {\n\tCHI_effect = { log = \"中文内容\" }\n}\n",
+        );
+
+        let result = edit_hoi4_script_file(EditHoi4ScriptFileRequest {
+            path: path.to_string_lossy().to_string(),
+            workspace_root: Some(root.to_string_lossy().to_string()),
+            operation: ScriptEditOperation::ReplaceNamedBlock {
+                block_name: "CHI_effect".to_string(),
+                content: "CHI_effect = { log = \"新的中文内容\" }".to_string(),
+            },
+            dry_run: true,
+            format: Some(false),
+        })
+        .expect("multibyte edit should not panic");
+
+        assert!(result.preview.contains("新的中文内容"));
+
+        fs::remove_dir_all(root).expect("temp output should clean up");
+    }
+
     fn write_file(path: &std::path::Path, content: &str) {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("fixture parent should be created");
@@ -504,16 +482,22 @@ mod tests {
 
     fn unique_temp_dir() -> std::path::PathBuf {
         static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time should be after unix epoch")
-            .as_nanos();
-        let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "rhoiscribe-script-edit-test-{}-{}-{}",
-            std::process::id(),
-            suffix,
-            counter
-        ))
+        for _ in 0..100 {
+            let suffix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos();
+            let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "rhoiscribe-script-edit-test-{}-{}-{}",
+                std::process::id(),
+                suffix,
+                counter
+            ));
+            if fs::create_dir(&path).is_ok() {
+                return path;
+            }
+        }
+        panic!("failed to create unique temp directory");
     }
 }

@@ -244,7 +244,6 @@ fn format_script_file(
 ) -> Result<(), String> {
     let bytes = fs::read(&file.absolute_path)
         .map_err(|error| format!("failed to read {}: {}", file.absolute_path.display(), error))?;
-    let had_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
     let body = strip_bom(&bytes);
     let Ok(script) = String::from_utf8(body.to_vec()) else {
         return Ok(());
@@ -266,12 +265,7 @@ fn format_script_file(
     }
 
     if apply {
-        let mut repaired = Vec::new();
-        if had_bom && should_have_utf8_bom(&file.relative_path) {
-            repaired.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
-        }
-        repaired.extend_from_slice(formatted.as_bytes());
-        fs::write(&file.absolute_path, repaired).map_err(|error| {
+        fs::write(&file.absolute_path, formatted.as_bytes()).map_err(|error| {
             format!(
                 "failed to write {}: {}",
                 file.absolute_path.display(),

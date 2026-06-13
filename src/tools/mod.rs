@@ -2,6 +2,7 @@ mod environment;
 mod error_log;
 mod gui_gfx_asset;
 mod paradox_lexer;
+mod project_files;
 mod project_index;
 mod project_repair;
 mod project_validation;
@@ -117,7 +118,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec {
         name: "edit_hoi4_script_file",
         title: "Edit HOI4 script file",
-        description: "Modify an existing HOI4 txt/gui/gfx/lua script file by replacing a named block or inserting a new named block, with dry-run preview, brace checks, formatting, and encoding preservation.",
+        description: "Modify an existing HOI4 txt/gui/gfx/lua script file inside workspace_root by replacing a named block or inserting a new named block, with dry-run preview, brace checks, formatting, and encoding preservation.",
         required: &["path", "operation", "dry_run"],
     },
     ToolSpec {

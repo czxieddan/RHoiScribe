@@ -84,6 +84,7 @@ pub fn generate_gui_gfx_asset(
 
     let relative_directory = normalize_asset_directory(request.relative_directory.as_deref())?;
     let png_path = format!("{}/{}.png", relative_directory, request.asset_name);
+    let svg_path = format!("{}/source/{}.svg", relative_directory, request.asset_name);
     let gfx_path = format!("interface/{}.gfx", request.asset_name);
     let gui_path = format!("interface/{}.gui", request.asset_name);
 
@@ -135,7 +136,7 @@ pub fn generate_gui_gfx_asset(
         },
         GeneratedGuiGfxAssetFile {
             kind: "svg".to_string(),
-            path: format!("gfx/interface/rhoiscribe/source/{}.svg", request.asset_name),
+            path: svg_path,
             text_content: Some(svg),
             content_base64: None,
             encoding: Some("utf-8".to_string()),
@@ -487,7 +488,7 @@ fn crc32(data: &[u8]) -> u32 {
     for byte in data {
         crc ^= u32::from(*byte);
         for _ in 0..8 {
-            let mask = if crc & 1 == 1 { 0xedb8_8320 } else { 0 };
+            let mask = if crc & 1 == 1 { 0xedb88320 } else { 0 };
             crc = (crc >> 1) ^ mask;
         }
     }
@@ -692,7 +693,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{GenerateGuiGfxAssetRequest, generate_gui_gfx_asset};
+    use super::{GenerateGuiGfxAssetRequest, crc32, generate_gui_gfx_asset};
 
     #[test]
     fn refuses_generation_without_approval() {
@@ -843,6 +844,35 @@ mod tests {
 
             assert!(error.contains("unsafe relative path"));
         }
+    }
+
+    #[test]
+    fn uses_relative_directory_for_svg_source_path_and_png_crc() {
+        let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
+            output_root: None,
+            asset_name: "CHI_button".to_string(),
+            sprite_name: None,
+            gui_name: None,
+            width: 32,
+            height: 16,
+            style: Some("button".to_string()),
+            primary_color: None,
+            secondary_color: None,
+            texture: None,
+            shadow: Some(false),
+            glow: Some(false),
+            emboss: Some(false),
+            write_gui: Some(false),
+            approved: true,
+            dry_run: true,
+            relative_directory: Some("gfx/interface/custom".to_string()),
+        })
+        .expect("asset should render");
+
+        assert!(result.files.iter().any(|file| {
+            file.kind == "svg" && file.path == "gfx/interface/custom/source/CHI_button.svg"
+        }));
+        assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
     }
 
     #[test]
