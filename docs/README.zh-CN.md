@@ -111,7 +111,7 @@ Agents 可以调用工具进行可重复的生成和验证：
 唯一 ID 扫描会按结构化 HOI4 定义批量检查候选新 ID，并报告重复、已有输出文件和 `replace_path` 风险。
 项目索引会为 flag、变量、scripted trigger/effect、国策、事件、GUI 元素、GFX sprite、贴图路径和本地化键建立结构化定义与引用图。
 项目验证会返回红/黄/绿检查，覆盖重复定义、括号平衡、缺失贴图或 sprite、缺失本地化键和 `replace_path` 风险。
-项目修复支持 dry-run 或直接应用编码与格式修复。它会检查 UTF-8 BOM 规则、脚本格式、`sound/` 文件类型和 `music/` OGG 元数据。需要 ffmpeg 但本机缺失时，RHoiScribe 只返回安装建议，不会在没有用户批准时安装。
+项目修复支持 dry-run 或直接应用编码与格式修复。它会检查 UTF-8 BOM 规则、脚本格式、`sound/` 文件类型和 `music/` OGG 元数据。需要 ffmpeg 但本机缺失时，dry-run 会返回安装建议；用户批准后，使用 `dry_run=false` 和 `install_ffmpeg=true` 可以允许静默安装尝试。
 脚本编辑可以对现有 HOI4 脚本文件替换或插入命名 block，并提供 dry-run 预览和括号检查。
 实验性 GUI/GFX 资产工具可以在本地生成程序化 PNG、`.gfx` 注册文件，以及可选的 `.gui` 文件，不依赖外部生图模型。写入新资产需要 `approved=true`。
 环境发现会优先通过 Steam 元数据定位 HOI4 安装目录，再按需扫描文件夹，并从 `launcher-settings.json` 读取文档目录、`hoi4.exe` 路径、`logs/error.log` 路径和游戏版本。

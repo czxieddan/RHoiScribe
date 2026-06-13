@@ -166,7 +166,7 @@ Windows clients usually need the `.exe` path and escaped backslashes in JSON:
 - Write mode: generation tools require `dry_run = false` and `output_root = "<MOD_OUTPUT_ROOT>"`.
 - Project index: `index_hoi4_project` returns structured definitions, references, and files for a mod root and optional game roots.
 - Project validation: `validate_hoi4_project` returns red/yellow/green static checks for duplicate IDs, brace balance, missing GUI/GFX/localisation links, and `replace_path` risks.
-- Repair checks: `repair_hoi4_project` can dry-run or apply UTF-8 BOM rules, Paradox script formatting, and audio checks. If ffmpeg is missing, ask the user before installing it; RHoiScribe returns guidance and does not install it silently.
+- Repair checks: `repair_hoi4_project` can dry-run or apply UTF-8 BOM rules, Paradox script formatting, and audio checks. If ffmpeg is missing, dry-run returns guidance; after user approval, `dry_run=false` with `install_ffmpeg=true` allows a silent installation attempt.
 - Existing-file edits: `edit_hoi4_script_file` replaces or inserts named blocks in an existing HOI4 script file with dry-run preview and brace checks.
 - Experimental assets: `generate_gui_gfx_asset` can create local procedural PNG files, `.gfx` sprite registration, and optional `.gui` files without external image models. Writing requires `approved=true`.
 - Environment discovery: `discover_hoi4_environment` can find `<HOI4_GAME_PATH>`, `game_executable_path`, `<HOI4_DOCUMENT_PATH>`, `error_log_path`, and game version when local HOI4 is installed.

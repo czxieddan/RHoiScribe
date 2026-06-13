@@ -111,7 +111,7 @@ Knowledge search は `mtth variables`、`decision mission blocks`、`on_actions 
 Identifier scanning は proposed new IDs を structured HOI4 definitions に対して batch check し、duplicates、existing output files、`replace_path` risks を返します。
 Project indexing は flags、variables、scripted triggers/effects、focuses、events、GUI elements、GFX sprites、texture paths、localisation keys の definitions、references、files を構造化して返します。
 Project validation は duplicate definitions、brace balance、missing textures or sprites、missing localisation keys、`replace_path` risks を red/yellow/green checks として返します。
-Project repair は encoding と formatting の fixes を dry-run または apply できます。UTF-8 BOM rules、script formatting、`sound/` file types、`music/` OGG metadata を確認します。ffmpeg が必要で見つからない場合、RHoiScribe は install guidance を返し、user approval なしではインストールしません。
+Project repair は encoding と formatting の fixes を dry-run または apply できます。UTF-8 BOM rules、script formatting、`sound/` file types、`music/` OGG metadata を確認します。ffmpeg が必要で見つからない場合、dry-run は install guidance を返します。user approval 後は `dry_run=false` と `install_ffmpeg=true` で silent installation attempt を許可できます。
 Script editing は existing HOI4 script files に対して named block の replace または insert を行い、dry-run preview と brace checks を返します。
 Experimental GUI/GFX asset tool は external image models に依存せず、local procedural PNG assets、`.gfx` sprite registration、optional `.gui` files を生成できます。新しい assets の書き込みには `approved=true` が必要です。
 Environment discovery はまず Steam metadata から HOI4 install を探し、必要に応じて folder scan を行い、`launcher-settings.json` から document data path、`hoi4.exe` path、`logs/error.log` path、game version を読み取ります。

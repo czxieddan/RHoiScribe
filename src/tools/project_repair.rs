@@ -44,6 +44,8 @@ pub struct FfmpegStatus {
     pub command: Option<String>,
     pub install_required: bool,
     pub install_attempted: bool,
+    pub install_succeeded: bool,
+    pub install_error: Option<String>,
     pub install_script: String,
     pub message: String,
 }
@@ -91,6 +93,7 @@ pub fn repair_hoi4_project(
         request.ffmpeg_path.as_deref(),
         request.install_ffmpeg.unwrap_or(false),
         needs_media_tools,
+        request.dry_run,
     );
 
     let mut checks = Vec::new();
@@ -381,11 +384,45 @@ fn detect_ffmpeg(
     requested_path: Option<&str>,
     install_requested: bool,
     needed: bool,
+    dry_run: bool,
 ) -> FfmpegStatus {
-    let command = match requested_path {
-        Some(path) => Path::new(path).is_file().then(|| path.to_string()),
-        None => command_available("ffmpeg").then(|| "ffmpeg".to_string()),
-    };
+    detect_ffmpeg_with_installer(
+        requested_path,
+        install_requested,
+        needed,
+        dry_run,
+        install_ffmpeg_silently,
+    )
+}
+
+fn detect_ffmpeg_with_installer(
+    requested_path: Option<&str>,
+    install_requested: bool,
+    needed: bool,
+    dry_run: bool,
+    installer: fn() -> Result<(), String>,
+) -> FfmpegStatus {
+    let mut command = ffmpeg_command(requested_path);
+    let mut install_attempted = false;
+    let mut install_succeeded = false;
+    let mut install_error = None;
+
+    if needed && command.is_none() && install_requested && !dry_run {
+        install_attempted = true;
+        match installer() {
+            Ok(()) => {
+                command = ffmpeg_command(requested_path);
+                install_succeeded = command.is_some();
+                if !install_succeeded {
+                    install_error = Some(
+                        "ffmpeg installer completed, but ffmpeg was not found on PATH afterward"
+                            .to_string(),
+                    );
+                }
+            }
+            Err(error) => install_error = Some(error),
+        }
+    }
 
     let available = command.is_some();
     let install_required = needed && !available;
@@ -395,12 +432,27 @@ fn detect_ffmpeg(
         available,
         command,
         install_required,
-        install_attempted: false,
+        install_attempted,
+        install_succeeded,
+        install_error: install_error.clone(),
         install_script,
         message: if available {
-            "ffmpeg is available for media probing.".to_string()
+            if install_attempted {
+                "ffmpeg is available after approved silent installation attempt.".to_string()
+            } else {
+                "ffmpeg is available for media probing.".to_string()
+            }
+        } else if install_attempted {
+            format!(
+                "Approved silent ffmpeg installation was attempted, but ffmpeg is still unavailable: {}",
+                install_error.unwrap_or_else(|| "unknown installer error".to_string())
+            )
         } else if install_requested && install_required {
-            "ffmpeg is required for media probing, but RHoiScribe returned an install script instead of modifying the system automatically. Run it only after explicit user approval.".to_string()
+            if dry_run {
+                "ffmpeg is required for media probing. Dry-run mode did not install it; rerun with dry_run=false and install_ffmpeg=true after user approval.".to_string()
+            } else {
+                "ffmpeg is required for media probing. Set install_ffmpeg=true only after user approval to allow a silent installation attempt.".to_string()
+            }
         } else if install_required {
             "ffmpeg is required for full music checks. Ask the user before installing it."
                 .to_string()
@@ -410,17 +462,103 @@ fn detect_ffmpeg(
     }
 }
 
+fn ffmpeg_command(requested_path: Option<&str>) -> Option<String> {
+    match requested_path {
+        Some(path) => Path::new(path).is_file().then(|| path.to_string()),
+        None => command_available("ffmpeg").then(|| "ffmpeg".to_string()),
+    }
+}
+
 fn ffmpeg_install_script() -> String {
     r#"# Requires explicit user approval before running.
 if (Get-Command winget -ErrorAction SilentlyContinue) {
-    winget install --id Gyan.FFmpeg --source winget
+    winget install --id Gyan.FFmpeg --source winget --silent --accept-package-agreements --accept-source-agreements
 } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
-    choco install ffmpeg -y
+    choco install ffmpeg -y --no-progress
 } else {
     Write-Error "Install ffmpeg manually from https://ffmpeg.org/download.html and add it to PATH."
 }
 "#
     .to_string()
+}
+
+fn install_ffmpeg_silently() -> Result<(), String> {
+    if cfg!(target_os = "windows") {
+        if command_available("winget") {
+            return run_installer(
+                "winget",
+                &[
+                    "install",
+                    "--id",
+                    "Gyan.FFmpeg",
+                    "--source",
+                    "winget",
+                    "--silent",
+                    "--accept-package-agreements",
+                    "--accept-source-agreements",
+                ],
+            );
+        }
+
+        if command_available("choco") {
+            return run_installer("choco", &["install", "ffmpeg", "-y", "--no-progress"]);
+        }
+
+        return Err(
+            "winget and choco are not available for silent ffmpeg installation".to_string(),
+        );
+    }
+
+    if cfg!(target_os = "macos") {
+        if command_available("brew") {
+            return run_installer("brew", &["install", "ffmpeg"]);
+        }
+
+        return Err("Homebrew is not available for silent ffmpeg installation".to_string());
+    }
+
+    if command_available("apt-get") {
+        run_installer("sudo", &["-n", "apt-get", "update"])?;
+        return run_installer("sudo", &["-n", "apt-get", "install", "-y", "ffmpeg"]);
+    }
+
+    if command_available("dnf") {
+        return run_installer("sudo", &["-n", "dnf", "install", "-y", "ffmpeg"]);
+    }
+
+    if command_available("pacman") {
+        return run_installer("sudo", &["-n", "pacman", "-S", "--noconfirm", "ffmpeg"]);
+    }
+
+    Err("no supported package manager was found for silent ffmpeg installation".to_string())
+}
+
+fn run_installer(command: &str, args: &[&str]) -> Result<(), String> {
+    let output = Command::new(command)
+        .args(args)
+        .output()
+        .map_err(|error| format!("failed to run {}: {}", command, error))?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = [stderr.trim(), stdout.trim()]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    Err(if detail.is_empty() {
+        format!("{} exited with status {}", command, output.status)
+    } else {
+        format!(
+            "{} exited with status {}: {}",
+            command, output.status, detail
+        )
+    })
 }
 
 fn ffprobe_command(ffmpeg: &str) -> String {
@@ -616,7 +754,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{RepairHoi4ProjectRequest, repair_hoi4_project};
+    use super::{RepairHoi4ProjectRequest, detect_ffmpeg_with_installer, repair_hoi4_project};
     use crate::tools::ScanRoot;
 
     #[test]
@@ -751,7 +889,7 @@ mod tests {
     }
 
     #[test]
-    fn ffmpeg_install_request_returns_script_when_missing() {
+    fn ffmpeg_install_request_returns_script_when_missing_in_dry_run() {
         let root = unique_temp_dir();
         write_bytes(&root, "music/theme.ogg", b"not real audio");
 
@@ -778,6 +916,36 @@ mod tests {
         assert!(!result.ffmpeg.install_attempted);
 
         fs::remove_dir_all(root).expect("temp output should clean up");
+    }
+
+    #[test]
+    fn approved_non_dry_run_attempts_silent_ffmpeg_install_when_missing() {
+        let result =
+            detect_ffmpeg_with_installer(Some("Z:/missing/ffmpeg.exe"), true, true, false, || {
+                Err("installer unavailable in test".to_string())
+            });
+
+        assert!(result.install_required);
+        assert!(result.install_attempted);
+        assert!(!result.install_succeeded);
+        assert_eq!(
+            result.install_error.as_deref(),
+            Some("installer unavailable in test")
+        );
+        assert!(result.message.contains("attempted"));
+    }
+
+    #[test]
+    fn dry_run_does_not_attempt_silent_ffmpeg_install_even_when_approved() {
+        let result =
+            detect_ffmpeg_with_installer(Some("Z:/missing/ffmpeg.exe"), true, true, true, || {
+                panic!("dry-run must not run installer")
+            });
+
+        assert!(result.install_required);
+        assert!(!result.install_attempted);
+        assert!(!result.install_succeeded);
+        assert!(result.message.contains("Dry-run mode"));
     }
 
     fn write_bytes(root: &std::path::Path, relative_path: &str, bytes: &[u8]) {
