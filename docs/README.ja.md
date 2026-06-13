@@ -95,6 +95,11 @@ Agents は反復可能な生成と検証のために tools を呼び出せます
 - `generate_decision_batch`
 - `search_hoi4_knowledge`
 - `scan_unique_identifiers`
+- `index_hoi4_project`
+- `validate_hoi4_project`
+- `repair_hoi4_project`
+- `edit_hoi4_script_file`
+- `generate_gui_gfx_asset`
 - `discover_hoi4_environment`
 - `validate_hoi4_debug_run`
 - `classify_error_log`
@@ -104,6 +109,11 @@ Agents は反復可能な生成と検証のために tools を呼び出せます
 Generation tools は dry-run preview をサポートします。write mode では `output_root` が必要で、対象 Mod の root からの相対 path にのみ書き込みます。
 Knowledge search は `mtth variables`、`decision mission blocks`、`on_actions FROM.FROM` のような query に対して matching topic IDs と MCP resource URIs を返します。
 Identifier scanning は proposed new IDs を structured HOI4 definitions に対して batch check し、duplicates、existing output files、`replace_path` risks を返します。
+Project indexing は flags、variables、scripted triggers/effects、focuses、events、GUI elements、GFX sprites、texture paths、localisation keys の definitions、references、files を構造化して返します。
+Project validation は duplicate definitions、brace balance、missing textures or sprites、missing localisation keys、`replace_path` risks を red/yellow/green checks として返します。
+Project repair は encoding と formatting の fixes を dry-run または apply できます。UTF-8 BOM rules、script formatting、`sound/` file types、`music/` OGG metadata を確認します。ffmpeg が必要で見つからない場合、RHoiScribe は install guidance を返し、user approval なしではインストールしません。
+Script editing は existing HOI4 script files に対して named block の replace または insert を行い、dry-run preview と brace checks を返します。
+Experimental GUI/GFX asset tool は external image models に依存せず、local procedural PNG assets、`.gfx` sprite registration、optional `.gui` files を生成できます。新しい assets の書き込みには `approved=true` が必要です。
 Environment discovery はまず Steam metadata から HOI4 install を探し、必要に応じて folder scan を行い、`launcher-settings.json` から document data path、`hoi4.exe` path、`logs/error.log` path、game version を読み取ります。
 Debug-run validation は optional な `hoi4.exe -gdpr-compliant -debug_mode` 起動の前に、document folders の `map`、`localisation`、`history`、launcher mod descriptors、現在の playset、dependency descriptors、workspace mod path を確認します。
 Error-log classification は `error.log` を HOI4 subsystem ごとに分類し、agent が diff または generated file list を持っている場合は changed paths に結び付けます。
@@ -222,6 +232,52 @@ Error log classification call の例:
   "error_log_path": "<HOI4_DOCUMENT_PATH>/logs/error.log",
   "changed_paths": ["common/national_focus/CHI.txt"],
   "limit": 5
+}
+```
+
+Project validation call の例:
+
+```json
+{
+  "roots": [
+    {
+      "path": "<MOD_OUTPUT_ROOT>",
+      "role": "mod"
+    }
+  ],
+  "include_game_roots": true
+}
+```
+
+Repair dry-run call の例:
+
+```json
+{
+  "roots": [
+    {
+      "path": "<MOD_OUTPUT_ROOT>",
+      "role": "mod"
+    }
+  ],
+  "dry_run": true,
+  "format_scripts": true,
+  "check_media": true
+}
+```
+
+Experimental GUI/GFX asset dry-run の例:
+
+```json
+{
+  "asset_name": "CHI_command_button",
+  "sprite_name": "GFX_CHI_command_button",
+  "width": 128,
+  "height": 64,
+  "style": "button",
+  "primary_color": "#214a67",
+  "secondary_color": "#d5b261",
+  "approved": true,
+  "dry_run": true
 }
 ```
 

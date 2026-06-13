@@ -95,6 +95,11 @@ Agents 可以调用工具进行可重复的生成和验证：
 - `generate_decision_batch`
 - `search_hoi4_knowledge`
 - `scan_unique_identifiers`
+- `index_hoi4_project`
+- `validate_hoi4_project`
+- `repair_hoi4_project`
+- `edit_hoi4_script_file`
+- `generate_gui_gfx_asset`
 - `discover_hoi4_environment`
 - `validate_hoi4_debug_run`
 - `classify_error_log`
@@ -104,6 +109,11 @@ Agents 可以调用工具进行可重复的生成和验证：
 生成工具支持 dry-run 预览。写入模式需要 `output_root`，并且只按目标 Mod 根目录的相对路径写入。
 知识搜索会为 `mtth variables`、`decision mission blocks`、`on_actions FROM.FROM` 这类查询返回匹配 topic ID 和 MCP resource URI。
 唯一 ID 扫描会按结构化 HOI4 定义批量检查候选新 ID，并报告重复、已有输出文件和 `replace_path` 风险。
+项目索引会为 flag、变量、scripted trigger/effect、国策、事件、GUI 元素、GFX sprite、贴图路径和本地化键建立结构化定义与引用图。
+项目验证会返回红/黄/绿检查，覆盖重复定义、括号平衡、缺失贴图或 sprite、缺失本地化键和 `replace_path` 风险。
+项目修复支持 dry-run 或直接应用编码与格式修复。它会检查 UTF-8 BOM 规则、脚本格式、`sound/` 文件类型和 `music/` OGG 元数据。需要 ffmpeg 但本机缺失时，RHoiScribe 只返回安装建议，不会在没有用户批准时安装。
+脚本编辑可以对现有 HOI4 脚本文件替换或插入命名 block，并提供 dry-run 预览和括号检查。
+实验性 GUI/GFX 资产工具可以在本地生成程序化 PNG、`.gfx` 注册文件，以及可选的 `.gui` 文件，不依赖外部生图模型。写入新资产需要 `approved=true`。
 环境发现会优先通过 Steam 元数据定位 HOI4 安装目录，再按需扫描文件夹，并从 `launcher-settings.json` 读取文档目录、`hoi4.exe` 路径、`logs/error.log` 路径和游戏版本。
 Debug 启动检查会在可选启动 `hoi4.exe -gdpr-compliant -debug_mode` 前检查文档目录下的 `map`、`localisation`、`history` 文件夹、launcher mod 描述文件、当前播放集、依赖描述文件和工作区 mod 路径。
 Error log 分类会按可能的 HOI4 子系统整理 `error.log`，并在 agent 提供 diff 或生成文件列表时关联到对应变更路径。
@@ -222,6 +232,52 @@ rhoiscribe://hoi4/knowledge/scripted_gui.dynamic_lists
   "error_log_path": "<HOI4_DOCUMENT_PATH>/logs/error.log",
   "changed_paths": ["common/national_focus/CHI.txt"],
   "limit": 5
+}
+```
+
+示例项目验证调用：
+
+```json
+{
+  "roots": [
+    {
+      "path": "<MOD_OUTPUT_ROOT>",
+      "role": "mod"
+    }
+  ],
+  "include_game_roots": true
+}
+```
+
+示例修复 dry-run 调用：
+
+```json
+{
+  "roots": [
+    {
+      "path": "<MOD_OUTPUT_ROOT>",
+      "role": "mod"
+    }
+  ],
+  "dry_run": true,
+  "format_scripts": true,
+  "check_media": true
+}
+```
+
+示例实验性 GUI/GFX 资产 dry-run：
+
+```json
+{
+  "asset_name": "CHI_command_button",
+  "sprite_name": "GFX_CHI_command_button",
+  "width": 128,
+  "height": 64,
+  "style": "button",
+  "primary_color": "#214a67",
+  "secondary_color": "#d5b261",
+  "approved": true,
+  "dry_run": true
 }
 ```
 

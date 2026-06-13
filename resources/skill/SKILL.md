@@ -40,6 +40,10 @@ Use the platform executable name for the current system. On Windows, quote JSON 
 
 - Read RHoiScribe resources before searching the web.
 - Use `scan_unique_identifiers` before creating new IDs, flags, variables, tags, ideas, focuses, decisions, characters, scripted triggers, or scripted effects.
+- Use `index_hoi4_project` and `validate_hoi4_project` before broad edits so references, missing assets, localisation keys, and duplicate definitions are checked across the project.
+- Use `repair_hoi4_project` in dry-run mode before applying encoding, formatting, or audio fixes. If ffmpeg is missing, ask for user approval before installing it.
+- Use `edit_hoi4_script_file` for targeted changes to existing files instead of regenerating whole files.
+- Use `generate_gui_gfx_asset` only when the user approves new experimental procedural GUI/GFX assets. Pass `approved=true`; otherwise reuse existing project art.
 - Prefer existing workspace paths and naming conventions before official fallback conventions.
 - Keep file names, folder names, and HOI4 token identifiers ASCII-only unless they are player-facing localisation text.
 - Deliver complete game-readable files, not sketches, TODO placeholders, or partial drafts.

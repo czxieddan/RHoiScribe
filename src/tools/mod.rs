@@ -122,7 +122,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec {
         name: "generate_gui_gfx_asset",
         title: "Generate GUI/GFX asset",
-        description: "Experimentally generate a local procedural HOI4 PNG asset plus .gfx and optional .gui registration without external image models; writing requires approved=true.",
+        description: "Experimentally generate a local procedural HOI4 PNG asset, .gfx sprite registration, and optional .gui files without external image models; writing requires approved=true.",
         required: &["asset_name", "width", "height", "approved", "dry_run"],
     },
     ToolSpec {

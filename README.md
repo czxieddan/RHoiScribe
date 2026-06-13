@@ -95,6 +95,11 @@ Agents can call tools for repeatable generation and validation:
 - `generate_decision_batch`
 - `search_hoi4_knowledge`
 - `scan_unique_identifiers`
+- `index_hoi4_project`
+- `validate_hoi4_project`
+- `repair_hoi4_project`
+- `edit_hoi4_script_file`
+- `generate_gui_gfx_asset`
 - `discover_hoi4_environment`
 - `validate_hoi4_debug_run`
 - `classify_error_log`
@@ -104,6 +109,11 @@ Agents can call tools for repeatable generation and validation:
 Generation tools support dry-run previews. In write mode they require an `output_root` and write paths relative to the target mod root.
 Knowledge search returns matching topic IDs and MCP resource URIs for queries such as `mtth variables`, `decision mission blocks`, or `on_actions FROM.FROM`.
 Identifier scanning checks batches of proposed new IDs against structured HOI4 definitions and reports duplicates, existing output files, and `replace_path` risks.
+Project indexing builds a structured map of definitions, references, and files for flags, variables, scripted triggers/effects, focuses, events, GUI elements, GFX sprites, texture paths, and localisation keys.
+Project validation returns red/yellow/green checks for duplicate definitions, brace balance, missing textures or sprites, missing localisation keys, and `replace_path` risks.
+Project repair can dry-run or apply encoding and formatting fixes. It checks UTF-8 BOM rules, script formatting, `sound/` file types, and `music/` OGG metadata. If ffmpeg is needed and missing, RHoiScribe returns installation guidance; it does not install it without user approval.
+Script editing modifies existing HOI4 script files by replacing or inserting named blocks with dry-run previews and brace checks.
+The experimental GUI/GFX asset tool can generate local procedural PNG assets, `.gfx` sprite registration, and optional `.gui` files without external image models. Writing new assets requires `approved=true`.
 Environment discovery finds the HOI4 install through Steam metadata first, then optional folder scanning, and reads `launcher-settings.json` for the document data path, `hoi4.exe` path, `logs/error.log` path, and game version.
 Debug-run validation checks the document `map`, `localisation`, and `history` folders, active launcher mod descriptors, the current playset, dependency descriptors, and the workspace mod path before an optional `hoi4.exe -gdpr-compliant -debug_mode` launch.
 Error-log classification groups `error.log` lines by likely HOI4 subsystem and links them back to changed paths when the agent has a diff or generated file list.
@@ -222,6 +232,52 @@ Example error log classification call:
   "error_log_path": "<HOI4_DOCUMENT_PATH>/logs/error.log",
   "changed_paths": ["common/national_focus/CHI.txt"],
   "limit": 5
+}
+```
+
+Example project validation call:
+
+```json
+{
+  "roots": [
+    {
+      "path": "<MOD_OUTPUT_ROOT>",
+      "role": "mod"
+    }
+  ],
+  "include_game_roots": true
+}
+```
+
+Example repair dry-run call:
+
+```json
+{
+  "roots": [
+    {
+      "path": "<MOD_OUTPUT_ROOT>",
+      "role": "mod"
+    }
+  ],
+  "dry_run": true,
+  "format_scripts": true,
+  "check_media": true
+}
+```
+
+Example experimental GUI/GFX asset dry-run:
+
+```json
+{
+  "asset_name": "CHI_command_button",
+  "sprite_name": "GFX_CHI_command_button",
+  "width": 128,
+  "height": 64,
+  "style": "button",
+  "primary_color": "#214a67",
+  "secondary_color": "#d5b261",
+  "approved": true,
+  "dry_run": true
 }
 ```
 

@@ -743,6 +743,30 @@
       "relationships": ["Debug runs should be followed by classify_error_log when the game reports errors or crashes.", "Dependencies in descriptor.mod determine which extra .mod descriptors may be enabled.", "launcher-settings.json version can guide bundled knowledge and compatibility checks."],
       "validation": ["Steam discovery must validate the final game path before returning it.", "Document path checks target the HOI4 user data folder, not the game install folder.", "Do not launch when any preflight check is red unless the user explicitly accepts the risk.", "Use / slashes in launcher .mod path fields pointing to the workspace mod."],
       "source_refs": ["https://hoi4.paradoxwikis.com/Modding", "https://hoi4.paradoxwikis.com/Troubleshooting"]
+    },
+    {
+      "id": "workflow.project_quality_tools",
+      "title": "Project indexing, validation, repair, and targeted edits",
+      "category": "workflow",
+      "file_types": ["txt", "gui", "gfx", "yml", "lua", "ogg", "wav", "png"],
+      "tags": ["index_hoi4_project", "validate_hoi4_project", "repair_hoi4_project", "edit_hoi4_script_file", "red_yellow_green", "ffmpeg", "encoding", "references"],
+      "body": "Use index_hoi4_project before broad generation or refactoring so the agent has a structured map of HOI4 definitions, references, files, flags, variables, scripted triggers/effects, focuses, GUI elements, GFX sprites, texture paths, and localisation keys. Use validate_hoi4_project after indexing to return red/yellow/green checks for duplicate definitions, brace balance, missing GFX textures or sprite references, missing localisation references, and replace_path risks. Use repair_hoi4_project in dry-run mode before applying UTF-8 BOM rules, Paradox script formatting, sound/music checks, or ffmpeg-assisted media validation. If ffmpeg is needed and absent, ask the user for approval before installation. Use edit_hoi4_script_file for targeted replacement or insertion of named blocks in existing script files instead of regenerating whole files.",
+      "syntax_blocks": ["index_hoi4_project { roots = [{ path = \"<MOD_ROOT>\", role = \"mod\" }] include_game_roots = true }", "validate_hoi4_project { roots = [{ path = \"<MOD_ROOT>\", role = \"mod\" }] }", "repair_hoi4_project { roots = [{ path = \"<MOD_ROOT>\", role = \"mod\" }] dry_run = true format_scripts = true check_media = true }", "edit_hoi4_script_file { path = \"common/scripted_effects/TAG_effects.txt\" operation = { kind = \"replace_named_block\", block_name = \"TAG_effect\" } dry_run = true }"],
+      "relationships": ["scan_unique_identifiers remains the creation-time duplicate check for proposed new tokens; project indexing is the broader reference graph for existing content.", "validate_hoi4_project should be run before debug launch or release-critical claims.", "repair_hoi4_project complements validation by fixing encoding and formatting issues that static validation reports or anticipates.", "classify_error_log should be used after a game load failure to focus edits on the changed files most likely to matter."],
+      "validation": ["Run dry-run mode before applying repairs or edits.", "Review repair changes before committing.", "Keep localisation files and interface/credits.txt as UTF-8 with BOM; keep other txt/lua/gui/gfx files UTF-8 without BOM unless the game file type requires otherwise.", "Under sound/, prefer wav files; for music OGG, verify 44100 Hz, 32-bit, and stereo when ffmpeg is available.", "Do not install ffmpeg without explicit user approval.", "Use targeted edit operations when only one named block needs to change."],
+      "source_refs": ["https://hoi4.paradoxwikis.com/Modding", "https://hoi4.paradoxwikis.com/Troubleshooting", "https://hoi4.paradoxwikis.com/Interface_modding", "https://ffmpeg.org/documentation.html"]
+    },
+    {
+      "id": "gui.experimental_asset_pipeline",
+      "title": "Experimental procedural GUI/GFX asset pipeline",
+      "category": "gui",
+      "file_types": ["png", "svg", "gfx", "gui"],
+      "tags": ["generate_gui_gfx_asset", "approved=true", "procedural_png", "spriteType", "quadTextureSprite", "experimental", "no_external_image_models"],
+      "body": "generate_gui_gfx_asset is an experimental local pipeline for making HOI4 interface assets when existing project art is not enough and the user approves new generated assets. It does not depend on external image models. The tool procedurally renders a PNG, returns an editable SVG approximation, writes a .gfx spriteType registration, and can also produce an optional .gui file. Agents should prefer existing workspace art first, ask before creating new visual assets, and pass approved=true only after user approval.",
+      "syntax_blocks": ["generate_gui_gfx_asset { asset_name = \"TAG_command_button\" sprite_name = \"GFX_TAG_command_button\" width = 128 height = 64 style = \"button\" approved = true dry_run = true }", "spriteType = { name = \"GFX_TAG_command_button\" texturefile = \"gfx/interface/TAG/TAG_command_button.png\" }", "iconType = { name = \"TAG_command_button\" quadTextureSprite = \"GFX_TAG_command_button\" }"],
+      "relationships": ["GUI layout consumes sprite names through quadTextureSprite or spriteType fields.", "GFX sprite registration links interface script to the generated PNG path.", "validate_hoi4_project can report missing sprite definitions or texture files after asset generation.", "repair_hoi4_project can confirm script encoding and formatting around generated .gfx/.gui files."],
+      "validation": ["Require approved=true for new generated assets.", "Use dry_run first and inspect the PNG preview before write mode.", "Keep asset_name, sprite_name, gui_name, paths, and script tokens ASCII-only.", "Use mod-specific gfx/interface subdirectories to avoid collisions.", "Do not claim visual fit until the user or game/debug validation confirms the asset works in context.", "Prefer existing art when the user has not approved procedural generation."],
+      "source_refs": ["https://hoi4.paradoxwikis.com/Interface_modding", "https://hoi4.paradoxwikis.com/Scripted_GUI_modding"]
     }
   ]
 }
