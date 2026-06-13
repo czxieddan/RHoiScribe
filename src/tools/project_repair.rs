@@ -107,7 +107,7 @@ pub fn repair_hoi4_project(
         }
 
         if format_scripts && should_format_script(&file.relative_path) {
-            format_script_file(file, apply, &mut changes)?;
+            format_script_file(file, apply, &mut checks, &mut changes)?;
         }
 
         if check_media {
@@ -239,6 +239,7 @@ fn ensure_no_bom(
 fn format_script_file(
     file: &ProjectFile,
     apply: bool,
+    checks: &mut Vec<RepairCheck>,
     changes: &mut Vec<RepairChange>,
 ) -> Result<(), String> {
     let bytes = fs::read(&file.absolute_path)
@@ -248,6 +249,17 @@ fn format_script_file(
     let Ok(script) = String::from_utf8(body.to_vec()) else {
         return Ok(());
     };
+    if !can_safely_format_script(&script) {
+        checks.push(check(
+            "script_format_skipped",
+            "yellow",
+            "warning",
+            &file.relative_path,
+            "Skipped script formatting because the file contains comments or quoted strings that require token-aware preservation.",
+            Some("Use targeted editing or a token-aware formatter for this file.".to_string()),
+        ));
+        return Ok(());
+    }
     let formatted = format_paradox_script(&script);
     if formatted.as_bytes() == body {
         return Ok(());
@@ -465,7 +477,9 @@ fn detect_ffmpeg_with_installer(
 fn ffmpeg_command(requested_path: Option<&str>) -> Option<String> {
     match requested_path {
         Some(path) => Path::new(path).is_file().then(|| path.to_string()),
-        None => command_available("ffmpeg").then(|| "ffmpeg".to_string()),
+        None => command_available("ffmpeg")
+            .then(|| "ffmpeg".to_string())
+            .or_else(common_windows_ffmpeg_path),
     }
 }
 
@@ -566,9 +580,28 @@ fn ffprobe_command(ffmpeg: &str) -> String {
     if path.file_stem() == Some(OsStr::new("ffmpeg"))
         && let Some(parent) = path.parent()
     {
-        return parent.join("ffprobe").to_string_lossy().to_string();
+        let ffprobe_name = match path.extension().and_then(OsStr::to_str) {
+            Some(extension) if !extension.is_empty() => format!("ffprobe.{}", extension),
+            _ => "ffprobe".to_string(),
+        };
+        return parent.join(ffprobe_name).to_string_lossy().to_string();
     }
     "ffprobe".to_string()
+}
+
+fn common_windows_ffmpeg_path() -> Option<String> {
+    if !cfg!(target_os = "windows") {
+        return None;
+    }
+
+    [
+        r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+        r"C:\ProgramData\chocolatey\bin\ffmpeg.exe",
+        r"C:\tools\ffmpeg\bin\ffmpeg.exe",
+    ]
+    .into_iter()
+    .find(|path| Path::new(path).is_file())
+    .map(str::to_string)
 }
 
 fn command_available(command: &str) -> bool {
@@ -576,6 +609,35 @@ fn command_available(command: &str) -> bool {
         .arg("-version")
         .output()
         .is_ok_and(|output| output.status.success())
+}
+
+fn can_safely_format_script(script: &str) -> bool {
+    !script.lines().any(line_has_comment) && !script.contains('"')
+}
+
+fn line_has_comment(line: &str) -> bool {
+    let mut escaped = false;
+    let mut in_string = false;
+
+    for character in line.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if character == '\\' && in_string {
+            escaped = true;
+            continue;
+        }
+        if character == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if character == '#' && !in_string {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn collect_files(roots: &[ScanRoot]) -> Result<Vec<ProjectFile>, String> {
@@ -754,7 +816,10 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::{RepairHoi4ProjectRequest, detect_ffmpeg_with_installer, repair_hoi4_project};
+    use super::{
+        RepairHoi4ProjectRequest, detect_ffmpeg_with_installer, ffprobe_command,
+        repair_hoi4_project,
+    };
     use crate::tools::ScanRoot;
 
     #[test]
@@ -889,6 +954,46 @@ mod tests {
     }
 
     #[test]
+    fn format_repair_skips_comments_and_quoted_strings() {
+        let root = unique_temp_dir();
+        let original =
+            "CHI_effect={ log=\"hello world\" # keep this comment\n add_political_power=1 }\n";
+        write_bytes(
+            &root,
+            "common/scripted_effects/CHI_effects.txt",
+            original.as_bytes(),
+        );
+
+        let result = repair_hoi4_project(RepairHoi4ProjectRequest {
+            roots: vec![ScanRoot {
+                path: root.to_string_lossy().to_string(),
+                role: Some("mod".to_string()),
+            }],
+            dry_run: false,
+            apply: Some(true),
+            install_ffmpeg: Some(false),
+            format_scripts: Some(true),
+            check_media: Some(false),
+            ffmpeg_path: None,
+        })
+        .expect("repair apply should complete");
+
+        assert!(
+            result
+                .checks
+                .iter()
+                .any(|check| { check.id == "script_format_skipped" && check.status == "yellow" })
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("common/scripted_effects/CHI_effects.txt"))
+                .expect("script should read"),
+            original
+        );
+
+        fs::remove_dir_all(root).expect("temp output should clean up");
+    }
+
+    #[test]
     fn ffmpeg_install_request_returns_script_when_missing_in_dry_run() {
         let root = unique_temp_dir();
         write_bytes(&root, "music/theme.ogg", b"not real audio");
@@ -948,6 +1053,15 @@ mod tests {
         assert!(result.message.contains("Dry-run mode"));
     }
 
+    #[test]
+    fn ffprobe_preserves_windows_executable_extension() {
+        assert_eq!(
+            ffprobe_command(r"C:\tools\ffmpeg\bin\ffmpeg.exe"),
+            r"C:\tools\ffmpeg\bin\ffprobe.exe"
+        );
+        assert!(ffprobe_command("/usr/local/bin/ffmpeg").ends_with("ffprobe"));
+    }
+
     fn write_bytes(root: &std::path::Path, relative_path: &str, bytes: &[u8]) {
         let path = root.join(relative_path);
         if let Some(parent) = path.parent() {
@@ -958,16 +1072,22 @@ mod tests {
 
     fn unique_temp_dir() -> std::path::PathBuf {
         static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time should be after unix epoch")
-            .as_nanos();
-        let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "rhoiscribe-project-repair-test-{}-{}-{}",
-            std::process::id(),
-            suffix,
-            counter
-        ))
+        for _ in 0..100 {
+            let suffix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos();
+            let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "rhoiscribe-project-repair-test-{}-{}-{}",
+                std::process::id(),
+                suffix,
+                counter
+            ));
+            if fs::create_dir(&path).is_ok() {
+                return path;
+            }
+        }
+        panic!("failed to create unique temp directory");
     }
 }

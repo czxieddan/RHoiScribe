@@ -6,6 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use super::paradox_lexer::{TokenKind, tokenize};
 use super::{ProjectIndexItem, ProjectIndexRequest, ScanRoot, project_index};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -33,22 +34,6 @@ pub struct ProjectValidationResult {
     pub messages: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TokenKind {
-    Word,
-    String,
-    Equals,
-    Open,
-    Close,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Token {
-    kind: TokenKind,
-    text: String,
-    line: usize,
-}
-
 pub fn validate_hoi4_project(
     request: ProjectValidationRequest,
 ) -> Result<ProjectValidationResult, String> {
@@ -72,7 +57,7 @@ pub fn validate_hoi4_project(
     }
 
     let index = project_index::index_hoi4_project(ProjectIndexRequest {
-        roots: request.roots,
+        roots: request.roots.clone(),
         include_game_roots: request.include_game_roots,
     })?;
 
@@ -95,7 +80,7 @@ pub fn validate_hoi4_project(
     check_duplicate_definitions(&index.definitions, &mut checks);
     check_brace_balance(&roots, &mut checks)?;
     check_replace_path_risks(&roots, &mut checks)?;
-    check_missing_gfx_textures(&roots, &index.references, &mut checks);
+    check_missing_gfx_textures(&request.roots, &index.references, &mut checks);
     check_missing_gfx_sprites(&index.definitions, &index.references, &mut checks);
     check_missing_localisation(&roots, &index.definitions, &mut checks)?;
 
@@ -361,7 +346,9 @@ fn check_missing_localisation(
             continue;
         };
 
-        for (key, value, line) in localisation_references(&content) {
+        let is_txt = extension_is(&file.relative_path, "txt");
+
+        for (key, value, line) in localisation_references(&content, is_txt) {
             if defined_keys.contains(value.as_str()) || is_inline_or_builtin_loc_value(&value) {
                 continue;
             }
@@ -384,7 +371,7 @@ fn check_missing_localisation(
     Ok(())
 }
 
-fn localisation_references(content: &str) -> Vec<(String, String, usize)> {
+fn localisation_references(content: &str, is_txt: bool) -> Vec<(String, String, usize)> {
     let tokens = tokenize(content);
     let mut references = Vec::new();
 
@@ -395,7 +382,7 @@ fn localisation_references(content: &str) -> Vec<(String, String, usize)> {
         if !matches!(window[2].kind, TokenKind::Word | TokenKind::String) {
             continue;
         }
-        if is_localisation_reference_key(&window[0].text) {
+        if is_localisation_reference_key(&window[0].text, is_txt) {
             references.push((
                 window[0].text.clone(),
                 window[2].text.clone(),
@@ -569,24 +556,31 @@ fn is_mod_descriptor(path: &str) -> bool {
     file_name == "descriptor.mod" || file_name.ends_with(".mod")
 }
 
+fn extension_is(path: &str, expected: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(expected))
+}
+
 fn normalize_relative_path(path: &str) -> String {
     path.replace('\\', "/").trim().trim_matches('/').to_string()
 }
 
-fn is_localisation_reference_key(key: &str) -> bool {
-    matches!(
-        key,
+fn is_localisation_reference_key(key: &str, is_txt: bool) -> bool {
+    match key {
         "title"
-            | "desc"
-            | "description"
-            | "name"
-            | "custom_effect_tooltip"
-            | "custom_trigger_tooltip"
-            | "tooltip"
-            | "delayed_event_text"
-            | "major"
-            | "minor"
-    )
+        | "desc"
+        | "description"
+        | "custom_effect_tooltip"
+        | "custom_trigger_tooltip"
+        | "tooltip"
+        | "delayed_event_text"
+        | "major"
+        | "minor" => true,
+        "name" => is_txt,
+        _ => false,
+    }
 }
 
 fn is_inline_or_builtin_loc_value(value: &str) -> bool {
@@ -625,88 +619,6 @@ fn status_rank(status: &str) -> u8 {
         "green" => 2,
         _ => 3,
     }
-}
-
-fn tokenize(content: &str) -> Vec<Token> {
-    let mut tokens = Vec::new();
-    let mut chars = content.chars().peekable();
-    let mut line = 1usize;
-
-    while let Some(character) = chars.next() {
-        match character {
-            '\n' => line += 1,
-            '#' => {
-                for next in chars.by_ref() {
-                    if next == '\n' {
-                        line += 1;
-                        break;
-                    }
-                }
-            }
-            '"' => {
-                let start_line = line;
-                let mut text = String::new();
-                let mut escaped = false;
-                for next in chars.by_ref() {
-                    if next == '\n' {
-                        line += 1;
-                    }
-                    if escaped {
-                        text.push(next);
-                        escaped = false;
-                        continue;
-                    }
-                    if next == '\\' {
-                        escaped = true;
-                        continue;
-                    }
-                    if next == '"' {
-                        break;
-                    }
-                    text.push(next);
-                }
-                tokens.push(Token {
-                    kind: TokenKind::String,
-                    text,
-                    line: start_line,
-                });
-            }
-            '=' => tokens.push(Token {
-                kind: TokenKind::Equals,
-                text: "=".to_string(),
-                line,
-            }),
-            '{' => tokens.push(Token {
-                kind: TokenKind::Open,
-                text: "{".to_string(),
-                line,
-            }),
-            '}' => tokens.push(Token {
-                kind: TokenKind::Close,
-                text: "}".to_string(),
-                line,
-            }),
-            character if character.is_whitespace() => {}
-            character => {
-                let start_line = line;
-                let mut text = String::from(character);
-                while let Some(next) = chars.peek().copied() {
-                    if next.is_whitespace() || matches!(next, '=' | '{' | '}' | '#') {
-                        break;
-                    }
-                    text.push(next);
-                    chars.next();
-                }
-                tokens.push(Token {
-                    kind: TokenKind::Word,
-                    text,
-                    line: start_line,
-                });
-            }
-        }
-    }
-
-    tokens
 }
 
 #[cfg(test)]
@@ -803,6 +715,55 @@ mod tests {
         fs::remove_dir_all(root).expect("temp output should clean up");
     }
 
+    #[test]
+    fn validation_avoids_gui_name_and_vanilla_texture_false_positives() {
+        let mod_root = unique_temp_dir();
+        let game_root = unique_temp_dir();
+        write_file(
+            &mod_root,
+            "interface/CHI_interface.gfx",
+            "spriteTypes = { spriteType = { name = \"GFX_CHI_panel\" texturefile = \"gfx/interface/vanilla/panel.dds\" } }\n",
+        );
+        write_file(
+            &mod_root,
+            "interface/CHI_interface.gui",
+            "guiTypes = { containerWindowType = { name = \"CHI_panel\" background = { quadTextureSprite = \"GFX_CHI_panel\" } } }\n",
+        );
+        write_file(
+            &game_root,
+            "gfx/interface/vanilla/panel.dds",
+            "fake texture",
+        );
+
+        let result = validate_hoi4_project(ProjectValidationRequest {
+            roots: vec![
+                ScanRoot {
+                    path: mod_root.to_string_lossy().to_string(),
+                    role: Some("mod".to_string()),
+                },
+                ScanRoot {
+                    path: game_root.to_string_lossy().to_string(),
+                    role: Some("game".to_string()),
+                },
+            ],
+            include_game_roots: Some(false),
+        })
+        .expect("validation should complete");
+
+        assert!(
+            !result
+                .checks
+                .iter()
+                .any(|check| check.id == "missing_gfx_texture")
+        );
+        assert!(!result.checks.iter().any(|check| {
+            check.id == "missing_localisation" && check.message.contains("CHI_panel")
+        }));
+
+        fs::remove_dir_all(mod_root).expect("temp output should clean up");
+        fs::remove_dir_all(game_root).expect("temp output should clean up");
+    }
+
     fn write_file(root: &std::path::Path, relative_path: &str, content: &str) {
         let path = root.join(relative_path);
         if let Some(parent) = path.parent() {
@@ -813,16 +774,22 @@ mod tests {
 
     fn unique_temp_dir() -> std::path::PathBuf {
         static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time should be after unix epoch")
-            .as_nanos();
-        let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "rhoiscribe-project-validation-test-{}-{}-{}",
-            std::process::id(),
-            suffix,
-            counter
-        ))
+        for _ in 0..100 {
+            let suffix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos();
+            let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "rhoiscribe-project-validation-test-{}-{}-{}",
+                std::process::id(),
+                suffix,
+                counter
+            ));
+            if fs::create_dir(&path).is_ok() {
+                return path;
+            }
+        }
+        panic!("failed to create unique temp directory");
     }
 }

@@ -268,8 +268,18 @@ fn render_asset(options: RenderOptions<'_>) -> Vec<u8> {
 }
 
 fn rounded_rect_contains(x: f32, y: f32, width: f32, height: f32, radius: f32) -> bool {
-    let inner_x = x.clamp(radius, width - radius - 1.0);
-    let inner_y = y.clamp(radius, height - radius - 1.0);
+    if width <= 0.0 || height <= 0.0 {
+        return false;
+    }
+
+    let max_radius = ((width - 1.0).max(0.0).min((height - 1.0).max(0.0))) * 0.5;
+    let radius = radius.clamp(0.0, max_radius);
+    let min_x = radius;
+    let max_x = (width - radius - 1.0).max(min_x);
+    let min_y = radius;
+    let max_y = (height - radius - 1.0).max(min_y);
+    let inner_x = x.clamp(min_x, max_x);
+    let inner_y = y.clamp(min_y, max_y);
     let dx = x - inner_x;
     let dy = y - inner_y;
     dx * dx + dy * dy <= radius * radius
@@ -552,11 +562,8 @@ fn write_asset_files(output_root: &str, files: &[GeneratedGuiGfxAssetFile]) -> R
 }
 
 fn normalize_asset_directory(directory: Option<&str>) -> Result<String, String> {
-    let directory = directory
-        .unwrap_or("gfx/interface/rhoiscribe")
-        .replace('\\', "/")
-        .trim_matches('/')
-        .to_string();
+    let raw_directory = directory.unwrap_or("gfx/interface/rhoiscribe");
+    let directory = raw_directory.trim_matches('/').to_string();
     validate_relative_path(&directory)?;
     if !directory.starts_with("gfx/") {
         return Err("relative_directory must stay under gfx/".to_string());
@@ -567,9 +574,12 @@ fn normalize_asset_directory(directory: Option<&str>) -> Result<String, String> 
 fn validate_relative_path(path: &str) -> Result<(), String> {
     if path.trim().is_empty()
         || path.starts_with('/')
-        || path.starts_with("../")
-        || path.contains("/../")
         || path.contains(':')
+        || path.contains('\\')
+        || path
+            .chars()
+            .any(|character| character.is_control() || character == '"')
+        || path.split('/').any(|segment| segment == "..")
     {
         return Err(format!("unsafe relative path `{}`", path));
     }
@@ -777,6 +787,65 @@ mod tests {
     }
 
     #[test]
+    fn tiny_asset_size_does_not_panic() {
+        let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
+            output_root: None,
+            asset_name: "CHI_tiny".to_string(),
+            sprite_name: None,
+            gui_name: None,
+            width: 1,
+            height: 1,
+            style: Some("button".to_string()),
+            primary_color: Some("#214a67".to_string()),
+            secondary_color: Some("#d5b261".to_string()),
+            texture: Some("none".to_string()),
+            shadow: Some(true),
+            glow: Some(true),
+            emboss: Some(true),
+            write_gui: Some(false),
+            approved: true,
+            dry_run: true,
+            relative_directory: None,
+        })
+        .expect("tiny asset should render safely");
+
+        assert!(result.files.iter().any(|file| file.kind == "png"));
+    }
+
+    #[test]
+    fn rejects_unsafe_asset_directories() {
+        for directory in [
+            "gfx/interface/../evil",
+            "gfx/interface/bad\"path",
+            "gfx/interface/bad\npath",
+            r"gfx\interface\bad",
+        ] {
+            let error = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
+                output_root: None,
+                asset_name: "CHI_bad".to_string(),
+                sprite_name: None,
+                gui_name: None,
+                width: 64,
+                height: 64,
+                style: Some("button".to_string()),
+                primary_color: None,
+                secondary_color: None,
+                texture: None,
+                shadow: Some(false),
+                glow: Some(false),
+                emboss: Some(false),
+                write_gui: Some(false),
+                approved: true,
+                dry_run: true,
+                relative_directory: Some(directory.to_string()),
+            })
+            .expect_err("unsafe path should be rejected");
+
+            assert!(error.contains("unsafe relative path"));
+        }
+    }
+
+    #[test]
     fn approved_apply_writes_game_files() {
         let root = unique_temp_dir();
         let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
@@ -815,16 +884,22 @@ mod tests {
 
     fn unique_temp_dir() -> std::path::PathBuf {
         static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time should be after unix epoch")
-            .as_nanos();
-        let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "rhoiscribe-gui-gfx-asset-test-{}-{}-{}",
-            std::process::id(),
-            suffix,
-            counter
-        ))
+        for _ in 0..100 {
+            let suffix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos();
+            let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "rhoiscribe-gui-gfx-asset-test-{}-{}-{}",
+                std::process::id(),
+                suffix,
+                counter
+            ));
+            if fs::create_dir(&path).is_ok() {
+                return path;
+            }
+        }
+        panic!("failed to create unique temp directory");
     }
 }

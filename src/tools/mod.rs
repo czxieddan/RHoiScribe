@@ -1,6 +1,7 @@
 mod environment;
 mod error_log;
 mod gui_gfx_asset;
+mod paradox_lexer;
 mod project_index;
 mod project_repair;
 mod project_validation;

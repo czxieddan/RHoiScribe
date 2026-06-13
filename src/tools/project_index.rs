@@ -8,6 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use super::ScanRoot;
+use super::paradox_lexer::{Token, TokenKind, tokenize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectIndexRequest {
@@ -60,22 +61,6 @@ struct WorkerOutput {
     files: Vec<IndexedFile>,
     definitions: Vec<ProjectIndexItem>,
     references: Vec<ProjectIndexItem>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TokenKind {
-    Word,
-    String,
-    Equals,
-    Open,
-    Close,
-}
-
-#[derive(Debug, Clone)]
-struct Token {
-    kind: TokenKind,
-    text: String,
-    line: usize,
 }
 
 pub fn index_hoi4_project(request: ProjectIndexRequest) -> Result<ProjectIndexResult, String> {
@@ -320,20 +305,6 @@ fn scan_block_definition(
             "dynamic modifier block",
         );
     }
-
-    if path.starts_with("interface/")
-        && matches!(
-            key,
-            "containerWindowType"
-                | "buttonType"
-                | "iconType"
-                | "instantTextBoxType"
-                | "listboxType"
-        )
-        && let Some(name) = next_name_assignment(file, line, key)
-    {
-        push_definition(file, output, "gui_element", &name, line, key);
-    }
 }
 
 fn scan_assignment(
@@ -344,9 +315,23 @@ fn scan_assignment(
     stack: &[String],
     output: &mut WorkerOutput,
 ) {
-    let path = file.relative_path.as_str();
     let current_block = stack.last().map(String::as_str);
 
+    scan_asset_assignment(file, key, value, line, current_block, output);
+    scan_flag_assignment(file, key, value, line, current_block, output);
+    scan_variable_assignment(file, key, value, line, current_block, output);
+    scan_focus_event_assignment(file, key, value, line, current_block, output);
+    scan_country_tag_assignment(file, key, line, output);
+}
+
+fn scan_asset_assignment(
+    file: &ScanFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    current_block: Option<&str>,
+    output: &mut WorkerOutput,
+) {
     if key == "name" && current_block == Some("spriteType") {
         push_definition(file, output, "gfx_sprite", value, line, "spriteType name");
     }
@@ -380,7 +365,16 @@ fn scan_assignment(
     if key == "quadTextureSprite" || key == "spriteType" {
         push_reference(file, output, "gfx_sprite", value, line, key);
     }
+}
 
+fn scan_flag_assignment(
+    file: &ScanFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    current_block: Option<&str>,
+    output: &mut WorkerOutput,
+) {
     if let Some(flag_kind) = flag_entity_type(key) {
         push_reference(file, output, flag_kind, value, line, key);
     }
@@ -390,15 +384,23 @@ fn scan_assignment(
     {
         push_reference(file, output, block, value, line, "flag field");
     }
+}
 
+fn scan_variable_assignment(
+    file: &ScanFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    current_block: Option<&str>,
+    output: &mut WorkerOutput,
+) {
     if is_variable_key(key) {
         push_reference(file, output, "variable", value, line, key);
     }
 
     if current_block.is_some_and(is_variable_key)
-        && (key == "var" || key.starts_with("CHI_") || key.contains("_"))
+        && let Some(variable_name) = variable_name_from_field(key, value)
     {
-        let variable_name = if key == "var" { value } else { key };
         push_reference(
             file,
             output,
@@ -408,7 +410,16 @@ fn scan_assignment(
             "variable field",
         );
     }
+}
 
+fn scan_focus_event_assignment(
+    file: &ScanFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    current_block: Option<&str>,
+    output: &mut WorkerOutput,
+) {
     if key == "id" {
         match current_block {
             Some("focus") | Some("shared_focus") | Some("joint_focus") => {
@@ -438,7 +449,10 @@ fn scan_assignment(
             "event namespace",
         );
     }
+}
 
+fn scan_country_tag_assignment(file: &ScanFile, key: &str, line: usize, output: &mut WorkerOutput) {
+    let path = file.relative_path.as_str();
     if path.starts_with("common/country_tags/") {
         push_definition(file, output, "country_tag", key, line, "country tag");
     }
@@ -455,16 +469,20 @@ fn scan_localisation(file: &ScanFile, content: &str, output: &mut WorkerOutput) 
             continue;
         };
 
-        if rest.starts_with('0') {
-            push_definition(
-                file,
-                output,
-                "localisation_key",
-                key,
-                line_index + 1,
-                "localisation key",
-            );
+        let key = key.trim();
+        let rest = rest.trim_start();
+        if key.is_empty() || is_localisation_language_header(key, rest) {
+            continue;
         }
+
+        push_definition(
+            file,
+            output,
+            "localisation_key",
+            key,
+            line_index + 1,
+            "localisation key",
+        );
     }
 }
 
@@ -531,88 +549,6 @@ fn sort_items(items: &mut [ProjectIndexItem]) {
                 &right.context,
             ))
     });
-}
-
-fn tokenize(content: &str) -> Vec<Token> {
-    let mut tokens = Vec::new();
-    let mut chars = content.chars().peekable();
-    let mut line = 1usize;
-
-    while let Some(character) = chars.next() {
-        match character {
-            '\n' => line += 1,
-            '#' => {
-                for next in chars.by_ref() {
-                    if next == '\n' {
-                        line += 1;
-                        break;
-                    }
-                }
-            }
-            '"' => {
-                let start_line = line;
-                let mut text = String::new();
-                let mut escaped = false;
-                for next in chars.by_ref() {
-                    if next == '\n' {
-                        line += 1;
-                    }
-                    if escaped {
-                        text.push(next);
-                        escaped = false;
-                        continue;
-                    }
-                    if next == '\\' {
-                        escaped = true;
-                        continue;
-                    }
-                    if next == '"' {
-                        break;
-                    }
-                    text.push(next);
-                }
-                tokens.push(Token {
-                    kind: TokenKind::String,
-                    text,
-                    line: start_line,
-                });
-            }
-            '=' => tokens.push(Token {
-                kind: TokenKind::Equals,
-                text: "=".to_string(),
-                line,
-            }),
-            '{' => tokens.push(Token {
-                kind: TokenKind::Open,
-                text: "{".to_string(),
-                line,
-            }),
-            '}' => tokens.push(Token {
-                kind: TokenKind::Close,
-                text: "}".to_string(),
-                line,
-            }),
-            character if character.is_whitespace() => {}
-            character => {
-                let start_line = line;
-                let mut text = String::from(character);
-                while let Some(next) = chars.peek().copied() {
-                    if next.is_whitespace() || matches!(next, '=' | '{' | '}' | '#') {
-                        break;
-                    }
-                    text.push(next);
-                    chars.next();
-                }
-                tokens.push(Token {
-                    kind: TokenKind::Word,
-                    text,
-                    line: start_line,
-                });
-            }
-        }
-    }
-
-    tokens
 }
 
 fn is_block_start(tokens: &[Token], index: usize) -> bool {
@@ -762,6 +698,46 @@ fn is_variable_key(key: &str) -> bool {
     )
 }
 
+fn is_variable_name_field(key: &str) -> bool {
+    matches!(key, "var" | "variable" | "which")
+}
+
+fn variable_name_from_field<'a>(key: &'a str, value: &'a str) -> Option<&'a str> {
+    if is_variable_name_field(key) {
+        return Some(value);
+    }
+
+    (!is_variable_option_key(key) && is_script_identifier(key)).then_some(key)
+}
+
+fn is_variable_option_key(key: &str) -> bool {
+    matches!(
+        key,
+        "value"
+            | "min"
+            | "max"
+            | "add"
+            | "subtract"
+            | "multiply"
+            | "divide"
+            | "modulo"
+            | "tooltip"
+            | "days"
+            | "check_range_bounds"
+    )
+}
+
+fn is_script_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '.'))
+}
+
+fn is_localisation_language_header(key: &str, rest: &str) -> bool {
+    key.starts_with("l_") && (rest.is_empty() || rest.starts_with('#'))
+}
+
 fn is_ignored_idea_block(key: &str) -> bool {
     matches!(
         key,
@@ -786,43 +762,6 @@ fn is_ignored_idea_block(key: &str) -> bool {
             | "on_remove"
             | "traits"
     )
-}
-
-fn next_name_assignment(file: &ScanFile, line: usize, key: &str) -> Option<String> {
-    let content = fs::read_to_string(&file.absolute_path).ok()?;
-    let lines = content.lines().skip(line.saturating_sub(1)).take(8);
-    let mut depth = 0isize;
-    let mut saw_block = false;
-
-    for line_text in lines {
-        if line_text.contains('{') {
-            depth += line_text.matches('{').count() as isize;
-            saw_block = true;
-        }
-        if saw_block
-            && line_text.contains("name")
-            && let Some(value) = quoted_assignment_value(line_text, "name")
-        {
-            return Some(value);
-        }
-        if line_text.contains('}') {
-            depth -= line_text.matches('}').count() as isize;
-            if saw_block && depth <= 0 {
-                break;
-            }
-        }
-    }
-
-    Some(format!("{}_line_{}", key, line))
-}
-
-fn quoted_assignment_value(line: &str, key: &str) -> Option<String> {
-    let trimmed = line.trim_start();
-    let rest = trimmed.strip_prefix(key)?.trim_start();
-    let rest = rest.strip_prefix('=')?.trim_start();
-    let rest = rest.strip_prefix('"')?;
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
 }
 
 #[cfg(test)]
@@ -932,16 +871,22 @@ mod tests {
 
     fn unique_temp_dir() -> std::path::PathBuf {
         static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time should be after unix epoch")
-            .as_nanos();
-        let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "rhoiscribe-project-index-test-{}-{}-{}",
-            std::process::id(),
-            suffix,
-            counter
-        ))
+        for _ in 0..100 {
+            let suffix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos();
+            let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "rhoiscribe-project-index-test-{}-{}-{}",
+                std::process::id(),
+                suffix,
+                counter
+            ));
+            if fs::create_dir(&path).is_ok() {
+                return path;
+            }
+        }
+        panic!("failed to create unique temp directory");
     }
 }
