@@ -26,56 +26,13 @@ fn refuses_generation_without_approval() {
 
 #[test]
 fn approved_dry_run_returns_png_svg_gfx_and_gui() {
-    let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
-        output_root: None,
-        asset_name: "sample_command_button".to_string(),
-        sprite_name: Some("GFX_sample_command_button".to_string()),
-        gui_name: Some("sample_command_button".to_string()),
-        width: 128,
-        height: 64,
-        style: Some("button".to_string()),
-        primary_color: Some("#214a67".to_string()),
-        secondary_color: Some("#d5b261".to_string()),
-        texture: Some("brushed".to_string()),
-        shadow: Some(true),
-        glow: Some(true),
-        emboss: Some(true),
-        write_gui: Some(true),
-        approved: true,
-        dry_run: true,
-        relative_directory: Some("gfx/interface/sample".to_string()),
-    })
-    .expect("asset generation should complete");
+    let result =
+        generate_gui_gfx_asset(command_button_request()).expect("asset generation should complete");
 
     assert!(result.experimental);
     assert!(result.dry_run);
     assert_eq!(result.files.len(), 4);
-    assert!(result.files.iter().any(|file| {
-        file.kind == "png"
-            && file
-                .path
-                .ends_with("gfx/interface/sample/sample_command_button.png")
-            && file
-                .content_base64
-                .as_deref()
-                .is_some_and(|content| content.starts_with("iVBORw0KGgo"))
-    }));
-    assert!(result.files.iter().any(|file| {
-        file.kind == "gfx"
-            && file
-                .text_content
-                .as_deref()
-                .unwrap_or("")
-                .contains("GFX_sample_command_button")
-    }));
-    assert!(result.files.iter().any(|file| {
-        file.kind == "gui"
-            && file
-                .text_content
-                .as_deref()
-                .unwrap_or("")
-                .contains("quadTextureSprite")
-    }));
+    assert_command_button_files(&result.files);
 }
 
 #[test]
@@ -193,4 +150,55 @@ fn asset_request(
         dry_run,
         relative_directory: relative_directory.map(str::to_string),
     }
+}
+
+fn command_button_request() -> GenerateGuiGfxAssetRequest {
+    GenerateGuiGfxAssetRequest {
+        output_root: None,
+        asset_name: "sample_command_button".to_string(),
+        sprite_name: Some("GFX_sample_command_button".to_string()),
+        gui_name: Some("sample_command_button".to_string()),
+        width: 128,
+        height: 64,
+        style: Some("button".to_string()),
+        primary_color: Some("#214a67".to_string()),
+        secondary_color: Some("#d5b261".to_string()),
+        texture: Some("brushed".to_string()),
+        shadow: Some(true),
+        glow: Some(true),
+        emboss: Some(true),
+        write_gui: Some(true),
+        approved: true,
+        dry_run: true,
+        relative_directory: Some("gfx/interface/sample".to_string()),
+    }
+}
+
+fn assert_command_button_files(files: &[super::GeneratedGuiGfxAssetFile]) {
+    assert!(files.iter().any(is_command_button_png));
+    assert!(
+        files
+            .iter()
+            .any(|file| text_file_contains(file, "gfx", "GFX_sample_command_button"))
+    );
+    assert!(
+        files
+            .iter()
+            .any(|file| text_file_contains(file, "gui", "quadTextureSprite"))
+    );
+}
+
+fn is_command_button_png(file: &super::GeneratedGuiGfxAssetFile) -> bool {
+    file.kind == "png"
+        && file
+            .path
+            .ends_with("gfx/interface/sample/sample_command_button.png")
+        && file
+            .content_base64
+            .as_deref()
+            .is_some_and(|content| content.starts_with("iVBORw0KGgo"))
+}
+
+fn text_file_contains(file: &super::GeneratedGuiGfxAssetFile, kind: &str, needle: &str) -> bool {
+    file.kind == kind && file.text_content.as_deref().unwrap_or("").contains(needle)
 }
