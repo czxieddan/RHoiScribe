@@ -27,54 +27,107 @@ where
         .map(|argument| argument.as_ref().to_string())
         .collect::<Vec<_>>();
 
-    match rest.as_slice() {
+    parse_rest(&rest)
+}
+
+fn parse_rest(rest: &[String]) -> Result<CliCommand, CliError> {
+    match rest {
         [] => Ok(CliCommand::Serve),
-        [flag] if flag == "--help" || flag == "-h" => Ok(CliCommand::Help),
-        [flag] if flag == "--version" || flag == "-V" => Ok(CliCommand::Version),
-        [flag] if flag == "--print-command" || flag == "--mcp-command" => {
-            Ok(CliCommand::PrintCommand)
-        }
-        [flag, command] if flag == "--skill" && command == "list-tools" => {
-            Ok(CliCommand::Skill(SkillCliCommand::ListTools))
-        }
-        [flag, command] if flag == "--skill" && command == "list-resources" => {
-            Ok(CliCommand::Skill(SkillCliCommand::ListResources))
-        }
-        [flag, command] if flag == "--skill" && command == "list-prompts" => {
-            Ok(CliCommand::Skill(SkillCliCommand::ListPrompts))
-        }
-        [flag, command, uri] if flag == "--skill" && command == "read-resource" => {
-            Ok(CliCommand::Skill(SkillCliCommand::ReadResource {
-                uri: uri.clone(),
-            }))
-        }
-        [flag, command, name] if flag == "--skill" && command == "get-prompt" => {
-            Ok(CliCommand::Skill(SkillCliCommand::GetPrompt {
-                name: name.clone(),
-                arguments_json: "{}".to_string(),
-            }))
-        }
-        [flag, command, name, arguments_json] if flag == "--skill" && command == "get-prompt" => {
-            Ok(CliCommand::Skill(SkillCliCommand::GetPrompt {
-                name: name.clone(),
-                arguments_json: arguments_json.clone(),
-            }))
-        }
-        [flag, command, name] if flag == "--skill" && command == "call-tool" => {
-            Ok(CliCommand::Skill(SkillCliCommand::CallTool {
-                name: name.clone(),
-                arguments_json: "{}".to_string(),
-            }))
-        }
-        [flag, command, name, arguments_json] if flag == "--skill" && command == "call-tool" => {
-            Ok(CliCommand::Skill(SkillCliCommand::CallTool {
-                name: name.clone(),
-                arguments_json: arguments_json.clone(),
-            }))
-        }
+        [flag] => parse_single_flag(flag),
+        [flag, skill_args @ ..] if flag == "--skill" => parse_skill_args(skill_args),
         [argument, ..] => Err(CliError {
             argument: argument.clone(),
         }),
+    }
+}
+
+fn parse_single_flag(flag: &str) -> Result<CliCommand, CliError> {
+    match flag {
+        "--help" | "-h" => Ok(CliCommand::Help),
+        "--version" | "-V" => Ok(CliCommand::Version),
+        "--print-command" | "--mcp-command" => Ok(CliCommand::PrintCommand),
+        argument => Err(CliError {
+            argument: argument.to_string(),
+        }),
+    }
+}
+
+fn parse_skill_args(args: &[String]) -> Result<CliCommand, CliError> {
+    match args {
+        [command] => parse_skill_command(command, None, None),
+        [command, value] => parse_skill_command(command, Some(value), None),
+        [command, value, arguments_json] => {
+            parse_skill_command(command, Some(value), Some(arguments_json))
+        }
+        [argument, ..] => Err(unknown_skill_argument(argument)),
+        [] => Err(unknown_skill_argument("--skill")),
+    }
+}
+
+fn parse_skill_command(
+    command: &str,
+    value: Option<&String>,
+    arguments_json: Option<&String>,
+) -> Result<CliCommand, CliError> {
+    if let Some(command) = fixed_skill_command(command) {
+        return Ok(CliCommand::Skill(command));
+    }
+
+    match command {
+        "read-resource" => skill_resource_command(command, value),
+        "get-prompt" => skill_prompt_command(command, value, arguments_json),
+        "call-tool" => skill_tool_command(command, value, arguments_json),
+        argument => Err(CliError {
+            argument: argument.to_string(),
+        }),
+    }
+}
+
+fn fixed_skill_command(command: &str) -> Option<SkillCliCommand> {
+    match command {
+        "list-tools" => Some(SkillCliCommand::ListTools),
+        "list-resources" => Some(SkillCliCommand::ListResources),
+        "list-prompts" => Some(SkillCliCommand::ListPrompts),
+        _ => None,
+    }
+}
+
+fn skill_resource_command(command: &str, uri: Option<&String>) -> Result<CliCommand, CliError> {
+    uri.map(|uri| CliCommand::Skill(SkillCliCommand::ReadResource { uri: uri.clone() }))
+        .ok_or_else(|| unknown_skill_argument(command))
+}
+
+fn skill_prompt_command(
+    command: &str,
+    name: Option<&String>,
+    arguments_json: Option<&String>,
+) -> Result<CliCommand, CliError> {
+    name.map(|name| {
+        CliCommand::Skill(SkillCliCommand::GetPrompt {
+            name: name.clone(),
+            arguments_json: arguments_json.cloned().unwrap_or_else(|| "{}".to_string()),
+        })
+    })
+    .ok_or_else(|| unknown_skill_argument(command))
+}
+
+fn skill_tool_command(
+    command: &str,
+    name: Option<&String>,
+    arguments_json: Option<&String>,
+) -> Result<CliCommand, CliError> {
+    name.map(|name| {
+        CliCommand::Skill(SkillCliCommand::CallTool {
+            name: name.clone(),
+            arguments_json: arguments_json.cloned().unwrap_or_else(|| "{}".to_string()),
+        })
+    })
+    .ok_or_else(|| unknown_skill_argument(command))
+}
+
+fn unknown_skill_argument(argument: &str) -> CliError {
+    CliError {
+        argument: argument.to_string(),
     }
 }
 

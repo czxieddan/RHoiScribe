@@ -6,3 +6,4 @@ dist/
 AGENTS.md
 tests/
 scripts/verify.ps1
+.superpowers/

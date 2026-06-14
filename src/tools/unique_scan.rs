@@ -1,12 +1,16 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
     thread,
 };
 
 use serde::{Deserialize, Serialize};
+
+use super::hoi4_keys::{flag_entity_type, normalize_entity_type};
+use super::paradox_lexer::{Token, TokenKind, tokenize};
+use super::project_files::{ProjectFile, collect_project_files};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ScanRoot {
@@ -70,14 +74,6 @@ pub struct UniqueIdentifierScanResult {
     pub messages: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
-struct ScanFile {
-    root: String,
-    root_role: Option<String>,
-    absolute_path: PathBuf,
-    relative_path: String,
-}
-
 #[derive(Debug, Clone, Default)]
 struct WorkerOutput {
     matches: Vec<IdentifierMatch>,
@@ -91,22 +87,6 @@ struct ReplacePathHit {
     root_role: Option<String>,
     path: String,
     source_path: String,
-    line: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TokenKind {
-    Word,
-    String,
-    Equals,
-    Open,
-    Close,
-}
-
-#[derive(Debug, Clone)]
-struct Token {
-    kind: TokenKind,
-    text: String,
     line: usize,
 }
 
@@ -184,64 +164,8 @@ fn candidate_lookup(candidates: &[IdentifierCandidate]) -> HashMap<String, HashS
     lookup
 }
 
-fn collect_scan_files(roots: &[ScanRoot]) -> Result<Vec<ScanFile>, String> {
-    let mut files = Vec::new();
-
-    for root in roots {
-        let root_path = PathBuf::from(&root.path);
-        if !root_path.exists() {
-            return Err(format!("scan root does not exist: {}", root.path));
-        }
-        if !root_path.is_dir() {
-            return Err(format!("scan root is not a directory: {}", root.path));
-        }
-
-        let mut pending = vec![root_path.clone()];
-        while let Some(path) = pending.pop() {
-            let entries = fs::read_dir(&path)
-                .map_err(|error| format!("failed to read {}: {}", path.display(), error))?;
-
-            for entry in entries {
-                let entry = entry.map_err(|error| error.to_string())?;
-                let entry_path = entry.path();
-                let file_type = entry.file_type().map_err(|error| error.to_string())?;
-
-                if file_type.is_dir() {
-                    if should_descend(&entry_path) {
-                        pending.push(entry_path);
-                    }
-                    continue;
-                }
-
-                if !file_type.is_file() {
-                    continue;
-                }
-
-                let relative_path = relative_path(&root_path, &entry_path);
-                if should_scan_file(&relative_path) {
-                    files.push(ScanFile {
-                        root: root.path.clone(),
-                        root_role: root.role.clone(),
-                        absolute_path: entry_path,
-                        relative_path,
-                    });
-                }
-            }
-        }
-    }
-
-    Ok(files)
-}
-
-fn should_descend(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-
-    !matches!(
-        name.to_ascii_lowercase().as_str(),
-        ".git" | "target" | "plans" | "tests" | "scripts" | ".idea" | ".vscode"
-    )
+fn collect_scan_files(roots: &[ScanRoot]) -> Result<Vec<ProjectFile>, String> {
+    collect_project_files(roots, should_scan_file)
 }
 
 fn should_scan_file(relative_path: &str) -> bool {
@@ -278,13 +202,6 @@ fn should_scan_file(relative_path: &str) -> bool {
     )
 }
 
-fn relative_path(root: &Path, file: &Path) -> String {
-    file.strip_prefix(root)
-        .unwrap_or(file)
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
 fn worker_count(file_count: usize) -> usize {
     if file_count == 0 {
         return 1;
@@ -297,7 +214,7 @@ fn worker_count(file_count: usize) -> usize {
 }
 
 fn scan_files_parallel(
-    files: Vec<ScanFile>,
+    files: Vec<ProjectFile>,
     worker_count: usize,
     candidate_lookup: Arc<HashMap<String, HashSet<String>>>,
 ) -> Result<Vec<WorkerOutput>, String> {
@@ -327,7 +244,7 @@ fn scan_files_parallel(
 }
 
 fn scan_file_chunk(
-    files: &[ScanFile],
+    files: &[ProjectFile],
     candidate_lookup: &HashMap<String, HashSet<String>>,
 ) -> Result<WorkerOutput, String> {
     let mut output = WorkerOutput::default();
@@ -347,7 +264,7 @@ fn scan_file_chunk(
 }
 
 fn scan_file(
-    file: &ScanFile,
+    file: &ProjectFile,
     content: &str,
     candidate_lookup: &HashMap<String, HashSet<String>>,
 ) -> WorkerOutput {
@@ -408,88 +325,6 @@ fn scan_file(
     output
 }
 
-fn tokenize(content: &str) -> Vec<Token> {
-    let mut tokens = Vec::new();
-    let mut chars = content.chars().peekable();
-    let mut line = 1usize;
-
-    while let Some(character) = chars.next() {
-        match character {
-            '\n' => line += 1,
-            '#' => {
-                for next in chars.by_ref() {
-                    if next == '\n' {
-                        line += 1;
-                        break;
-                    }
-                }
-            }
-            '"' => {
-                let start_line = line;
-                let mut text = String::new();
-                let mut escaped = false;
-                for next in chars.by_ref() {
-                    if next == '\n' {
-                        line += 1;
-                    }
-                    if escaped {
-                        text.push(next);
-                        escaped = false;
-                        continue;
-                    }
-                    if next == '\\' {
-                        escaped = true;
-                        continue;
-                    }
-                    if next == '"' {
-                        break;
-                    }
-                    text.push(next);
-                }
-                tokens.push(Token {
-                    kind: TokenKind::String,
-                    text,
-                    line: start_line,
-                });
-            }
-            '=' => tokens.push(Token {
-                kind: TokenKind::Equals,
-                text: "=".to_string(),
-                line,
-            }),
-            '{' => tokens.push(Token {
-                kind: TokenKind::Open,
-                text: "{".to_string(),
-                line,
-            }),
-            '}' => tokens.push(Token {
-                kind: TokenKind::Close,
-                text: "}".to_string(),
-                line,
-            }),
-            character if character.is_whitespace() => {}
-            character => {
-                let start_line = line;
-                let mut text = String::from(character);
-                while let Some(next) = chars.peek().copied() {
-                    if next.is_whitespace() || matches!(next, '=' | '{' | '}' | '#') {
-                        break;
-                    }
-                    text.push(next);
-                    chars.next();
-                }
-                tokens.push(Token {
-                    kind: TokenKind::Word,
-                    text,
-                    line: start_line,
-                });
-            }
-        }
-    }
-
-    tokens
-}
-
 fn is_block_start(tokens: &[Token], index: usize) -> bool {
     index + 2 < tokens.len()
         && tokens[index].kind == TokenKind::Word
@@ -505,7 +340,7 @@ fn is_assignment(tokens: &[Token], index: usize) -> bool {
 }
 
 fn scan_block_definition(
-    file: &ScanFile,
+    file: &ProjectFile,
     key: &str,
     line: usize,
     stack: &[String],
@@ -515,6 +350,88 @@ fn scan_block_definition(
     let normalized_path = file.relative_path.as_str();
     let parent = stack.last().map(String::as_str);
 
+    scan_idea_definition(file, key, line, normalized_path, candidate_lookup, output);
+    scan_dynamic_modifier_definition(
+        file,
+        key,
+        line,
+        normalized_path,
+        parent,
+        candidate_lookup,
+        output,
+    );
+    scan_character_definition(file, key, line, parent, candidate_lookup, output);
+    scan_scripted_definition(
+        file,
+        key,
+        line,
+        normalized_path,
+        stack.is_empty(),
+        candidate_lookup,
+        output,
+    );
+    scan_decision_definition(
+        file,
+        key,
+        line,
+        normalized_path,
+        stack.len(),
+        candidate_lookup,
+        output,
+    );
+}
+
+fn scan_assignment(
+    file: &ProjectFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    stack: &[String],
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
+    let current_block = stack.last().map(String::as_str);
+
+    scan_replace_path(file, key, value, line, output);
+    scan_focus_event_assignment(
+        file,
+        key,
+        value,
+        line,
+        current_block,
+        candidate_lookup,
+        output,
+    );
+    scan_country_tag_assignment(file, key, line, candidate_lookup, output);
+    scan_flag_assignment(
+        file,
+        key,
+        value,
+        line,
+        current_block,
+        candidate_lookup,
+        output,
+    );
+    scan_variable_assignment(
+        file,
+        key,
+        value,
+        line,
+        current_block,
+        candidate_lookup,
+        output,
+    );
+    scan_dynamic_modifier_reference(file, key, value, line, candidate_lookup, output);
+}
+
+fn scan_idea_definition(
+    file: &ProjectFile,
+    key: &str,
+    line: usize,
+    normalized_path: &str,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
     if normalized_path.starts_with("common/ideas/")
         && !is_ignored_idea_block(key)
         && has_candidate(candidate_lookup, "idea_token", key)
@@ -529,7 +446,17 @@ fn scan_block_definition(
             "idea token block",
         );
     }
+}
 
+fn scan_dynamic_modifier_definition(
+    file: &ProjectFile,
+    key: &str,
+    line: usize,
+    normalized_path: &str,
+    parent: Option<&str>,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
     if (normalized_path.starts_with("common/dynamic_modifiers/")
         || parent == Some("dynamic_modifier"))
         && has_candidate(candidate_lookup, "dynamic_modifier", key)
@@ -544,7 +471,16 @@ fn scan_block_definition(
             "dynamic modifier block",
         );
     }
+}
 
+fn scan_character_definition(
+    file: &ProjectFile,
+    key: &str,
+    line: usize,
+    parent: Option<&str>,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
     if parent == Some("characters") && has_candidate(candidate_lookup, "character", key) {
         push_match(
             file,
@@ -556,72 +492,104 @@ fn scan_block_definition(
             "character block",
         );
     }
+}
 
-    if normalized_path.starts_with("common/scripted_effects/")
-        && stack.is_empty()
-        && has_candidate(candidate_lookup, "scripted_effect", key)
-    {
-        push_match(
-            file,
-            output,
-            "scripted_effect",
-            key,
-            "scripted_effect",
-            line,
-            "top-level scripted effect",
-        );
-    }
-
-    if normalized_path.starts_with("common/scripted_triggers/")
-        && stack.is_empty()
-        && has_candidate(candidate_lookup, "scripted_trigger", key)
-    {
-        push_match(
-            file,
-            output,
-            "scripted_trigger",
-            key,
-            "scripted_trigger",
-            line,
-            "top-level scripted trigger",
-        );
-    }
-
-    if normalized_path.starts_with("common/decisions/") {
-        if stack.is_empty() && has_candidate(candidate_lookup, "decision_category", key) {
-            push_match(
-                file,
-                output,
-                "decision_category",
-                key,
-                "decision_category",
-                line,
-                "top-level decision category",
-            );
-        } else if stack.len() == 1
-            && !is_ignored_decision_block(key)
-            && has_candidate(candidate_lookup, "decision", key)
-        {
-            push_match(
-                file,
-                output,
-                "decision",
-                key,
-                "decision",
-                line,
-                "decision block inside category",
-            );
-        }
+fn scan_scripted_definition(
+    file: &ProjectFile,
+    key: &str,
+    line: usize,
+    normalized_path: &str,
+    is_top_level: bool,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
+    let Some((entity_type, kind, context)) = scripted_definition_kind(normalized_path) else {
+        return;
+    };
+    if is_top_level && has_candidate(candidate_lookup, entity_type, key) {
+        push_match(file, output, entity_type, key, kind, line, context);
     }
 }
 
-fn scan_assignment(
-    file: &ScanFile,
+fn scripted_definition_kind(path: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    if path.starts_with("common/scripted_effects/") {
+        Some((
+            "scripted_effect",
+            "scripted_effect",
+            "top-level scripted effect",
+        ))
+    } else if path.starts_with("common/scripted_triggers/") {
+        Some((
+            "scripted_trigger",
+            "scripted_trigger",
+            "top-level scripted trigger",
+        ))
+    } else {
+        None
+    }
+}
+
+fn scan_decision_definition(
+    file: &ProjectFile,
+    key: &str,
+    line: usize,
+    normalized_path: &str,
+    stack_depth: usize,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
+    if !normalized_path.starts_with("common/decisions/") {
+        return;
+    }
+
+    if decision_category_match(stack_depth, key, candidate_lookup) {
+        push_match(
+            file,
+            output,
+            "decision_category",
+            key,
+            "decision_category",
+            line,
+            "top-level decision category",
+        );
+    }
+
+    if decision_match(stack_depth, key, candidate_lookup) {
+        push_match(
+            file,
+            output,
+            "decision",
+            key,
+            "decision",
+            line,
+            "decision block inside category",
+        );
+    }
+}
+
+fn decision_category_match(
+    stack_depth: usize,
+    key: &str,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+) -> bool {
+    stack_depth == 0 && has_candidate(candidate_lookup, "decision_category", key)
+}
+
+fn decision_match(
+    stack_depth: usize,
+    key: &str,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+) -> bool {
+    stack_depth == 1
+        && !is_ignored_decision_block(key)
+        && has_candidate(candidate_lookup, "decision", key)
+}
+
+fn scan_replace_path(
+    file: &ProjectFile,
     key: &str,
     value: &str,
     line: usize,
-    stack: &[String],
-    candidate_lookup: &HashMap<String, HashSet<String>>,
     output: &mut WorkerOutput,
 ) {
     if key == "replace_path" && is_mod_descriptor(&file.relative_path) {
@@ -633,44 +601,93 @@ fn scan_assignment(
             line,
         });
     }
+}
 
-    let current_block = stack.last().map(String::as_str);
+fn scan_focus_event_assignment(
+    file: &ProjectFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    current_block: Option<&str>,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
+    scan_id_assignment(
+        file,
+        key,
+        value,
+        line,
+        current_block,
+        candidate_lookup,
+        output,
+    );
+    scan_reusable_focus_reference(file, key, value, line, candidate_lookup, output);
+    scan_event_namespace(file, key, value, line, candidate_lookup, output);
+}
 
-    if key == "id" {
-        match current_block {
-            Some(block @ ("focus" | "shared_focus" | "joint_focus"))
-                if has_candidate(candidate_lookup, "focus_id", value) =>
-            {
-                push_match(
-                    file,
-                    output,
-                    "focus_id",
-                    value,
-                    block,
-                    line,
-                    "id inside focus-like block",
-                );
-            }
-            Some("focus_tree") if has_candidate(candidate_lookup, "focus_tree_id", value) => {
-                push_match(
-                    file,
-                    output,
-                    "focus_tree_id",
-                    value,
-                    "focus_tree",
-                    line,
-                    "id inside focus_tree block",
-                );
-            }
-            Some(block @ ("country_event" | "news_event" | "state_event" | "unit_event"))
-                if has_candidate(candidate_lookup, "event_id", value) =>
-            {
-                push_match(file, output, "event_id", value, block, line, "event id");
-            }
-            _ => {}
-        }
+fn scan_id_assignment(
+    file: &ProjectFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    current_block: Option<&str>,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
+    if key != "id" {
+        return;
     }
 
+    let Some((entity_type, kind, context)) = id_assignment_kind(current_block) else {
+        return;
+    };
+    if has_candidate(candidate_lookup, entity_type, value) {
+        push_match(file, output, entity_type, value, kind, line, context);
+    }
+}
+
+fn id_assignment_kind(block: Option<&str>) -> Option<(&'static str, &'static str, &'static str)> {
+    const ID_ASSIGNMENTS: &[(&str, &str, &str, &str)] = &[
+        ("focus", "focus_id", "focus", "id inside focus-like block"),
+        (
+            "shared_focus",
+            "focus_id",
+            "shared_focus",
+            "id inside focus-like block",
+        ),
+        (
+            "joint_focus",
+            "focus_id",
+            "joint_focus",
+            "id inside focus-like block",
+        ),
+        (
+            "focus_tree",
+            "focus_tree_id",
+            "focus_tree",
+            "id inside focus_tree block",
+        ),
+        ("country_event", "event_id", "country_event", "event id"),
+        ("news_event", "event_id", "news_event", "event id"),
+        ("state_event", "event_id", "state_event", "event id"),
+        ("unit_event", "event_id", "unit_event", "event id"),
+    ];
+
+    let block = block?;
+    ID_ASSIGNMENTS
+        .iter()
+        .find(|(candidate, _, _, _)| *candidate == block)
+        .map(|(_, entity_type, kind, context)| (*entity_type, *kind, *context))
+}
+
+fn scan_reusable_focus_reference(
+    file: &ProjectFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
     if matches!(key, "shared_focus" | "joint_focus")
         && has_candidate(candidate_lookup, "focus_id", value)
     {
@@ -684,7 +701,16 @@ fn scan_assignment(
             "focus tree reference to reusable focus id",
         );
     }
+}
 
+fn scan_event_namespace(
+    file: &ProjectFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
     if key == "namespace" && has_candidate(candidate_lookup, "event_namespace", value) {
         push_match(
             file,
@@ -696,7 +722,15 @@ fn scan_assignment(
             "event namespace assignment",
         );
     }
+}
 
+fn scan_country_tag_assignment(
+    file: &ProjectFile,
+    key: &str,
+    line: usize,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
     if file.relative_path.starts_with("common/country_tags/")
         && has_candidate(candidate_lookup, "country_tag", key)
     {
@@ -710,7 +744,17 @@ fn scan_assignment(
             "country tag assignment",
         );
     }
+}
 
+fn scan_flag_assignment(
+    file: &ProjectFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    current_block: Option<&str>,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
     if let Some(flag_entity_type) = flag_entity_type(key) {
         push_flag_match(
             file,
@@ -742,28 +786,48 @@ fn scan_assignment(
             },
         );
     }
+}
 
+fn scan_variable_assignment(
+    file: &ProjectFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    current_block: Option<&str>,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
     if is_variable_key(key) && has_candidate(candidate_lookup, "variable", value) {
         push_match(file, output, "variable", value, key, line, "variable usage");
     }
 
-    if current_block.is_some_and(is_variable_key)
-        && (key == "var" || has_candidate(candidate_lookup, "variable", key))
-    {
-        let variable_name = if key == "var" { value } else { key };
-        if has_candidate(candidate_lookup, "variable", variable_name) {
-            push_match(
-                file,
-                output,
-                "variable",
-                variable_name,
-                current_block.unwrap(),
-                line,
-                "variable field",
-            );
-        }
+    let Some(block) = current_block.filter(|block| is_variable_key(block)) else {
+        return;
+    };
+    let Some(variable_name) = variable_name_from_field(key, value, candidate_lookup) else {
+        return;
+    };
+    if has_candidate(candidate_lookup, "variable", variable_name) {
+        push_match(
+            file,
+            output,
+            "variable",
+            variable_name,
+            block,
+            line,
+            "variable field",
+        );
     }
+}
 
+fn scan_dynamic_modifier_reference(
+    file: &ProjectFile,
+    key: &str,
+    value: &str,
+    line: usize,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+    output: &mut WorkerOutput,
+) {
     if key == "modifier" && has_candidate(candidate_lookup, "dynamic_modifier", value) {
         push_match(
             file,
@@ -778,7 +842,7 @@ fn scan_assignment(
 }
 
 fn scan_localisation_keys(
-    file: &ScanFile,
+    file: &ProjectFile,
     content: &str,
     candidate_lookup: &HashMap<String, HashSet<String>>,
     output: &mut WorkerOutput,
@@ -788,12 +852,18 @@ fn scan_localisation_keys(
     }
 
     for (line_index, line) in content.lines().enumerate() {
-        let trimmed = line.trim_start();
+        let trimmed = line.trim_start().trim_start_matches('\u{feff}');
         let Some((key, rest)) = trimmed.split_once(':') else {
             continue;
         };
 
-        if rest.starts_with('0') && has_candidate(candidate_lookup, "localisation_key", key) {
+        let key = key.trim();
+        let rest = rest.trim();
+        if key.is_empty() || is_localisation_language_header(key, rest) {
+            continue;
+        }
+
+        if has_candidate(candidate_lookup, "localisation_key", key) {
             push_match(
                 file,
                 output,
@@ -818,7 +888,7 @@ fn has_candidate(
 }
 
 fn push_match(
-    file: &ScanFile,
+    file: &ProjectFile,
     output: &mut WorkerOutput,
     entity_type: &str,
     value: &str,
@@ -847,7 +917,7 @@ struct FlagMatch<'a> {
 }
 
 fn push_flag_match(
-    file: &ScanFile,
+    file: &ProjectFile,
     output: &mut WorkerOutput,
     candidate_lookup: &HashMap<String, HashSet<String>>,
     flag_match: FlagMatch<'_>,
@@ -1021,56 +1091,9 @@ fn normalize_relative_path(path: &str) -> String {
     path.replace('\\', "/").trim().trim_matches('/').to_string()
 }
 
-fn normalize_entity_type(entity_type: &str) -> String {
-    match entity_type.to_ascii_lowercase().as_str() {
-        "focus" | "national_focus" | "focus_id" => "focus_id",
-        "focus_tree" | "focus_tree_id" => "focus_tree_id",
-        "tag" | "country" | "country_tag" => "country_tag",
-        "idea" | "idea_token" | "national_spirit" => "idea_token",
-        "dynamic_modifier" | "dynamic_modifier_token" => "dynamic_modifier",
-        "decision_category" | "decision_category_id" => "decision_category",
-        "decision" | "decision_id" => "decision",
-        "event" | "event_id" => "event_id",
-        "namespace" | "event_namespace" => "event_namespace",
-        "flag" => "flag",
-        "country_flag" => "country_flag",
-        "global_flag" => "global_flag",
-        "state_flag" => "state_flag",
-        "character_flag" | "unit_leader_flag" => "character_flag",
-        "mio_flag" => "mio_flag",
-        "project_flag" | "facility_flag" => "project_flag",
-        "var" | "variable" | "temp_variable" => "variable",
-        "loc" | "localisation" | "localisation_key" | "localization_key" => "localisation_key",
-        "scripted_effect" | "scripted_effect_id" => "scripted_effect",
-        "scripted_trigger" | "scripted_trigger_id" => "scripted_trigger",
-        "character" | "character_id" => "character",
-        other => other,
-    }
-    .to_string()
-}
-
 fn is_mod_descriptor(path: &str) -> bool {
     let file_name = path.rsplit('/').next().unwrap_or(path);
     file_name == "descriptor.mod" || file_name.ends_with(".mod")
-}
-
-fn flag_entity_type(key: &str) -> Option<&'static str> {
-    let flag_owner = key
-        .strip_prefix("set_")
-        .or_else(|| key.strip_prefix("has_"))
-        .or_else(|| key.strip_prefix("clr_"))
-        .or_else(|| key.strip_prefix("modify_"))?
-        .strip_suffix("_flag")?;
-
-    match flag_owner {
-        "country" => Some("country_flag"),
-        "global" => Some("global_flag"),
-        "state" => Some("state_flag"),
-        "character" | "unit_leader" => Some("character_flag"),
-        "mio" => Some("mio_flag"),
-        "project" | "facility" => Some("project_flag"),
-        _ => None,
-    }
 }
 
 fn is_variable_key(key: &str) -> bool {
@@ -1089,6 +1112,21 @@ fn is_variable_key(key: &str) -> bool {
             | "has_variable"
             | "clear_variable"
     )
+}
+
+fn variable_name_from_field<'a>(
+    key: &'a str,
+    value: &'a str,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+) -> Option<&'a str> {
+    if key == "var" {
+        return Some(value);
+    }
+    has_candidate(candidate_lookup, "variable", key).then_some(key)
+}
+
+fn is_localisation_language_header(key: &str, rest: &str) -> bool {
+    key.starts_with("l_") && (rest.is_empty() || rest.starts_with('#'))
 }
 
 fn is_ignored_idea_block(key: &str) -> bool {

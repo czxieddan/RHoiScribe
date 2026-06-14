@@ -164,6 +164,11 @@ Windows clients usually need the `.exe` path and escaped backslashes in JSON:
 - Resources: available through `resources/list` and `resources/read`.
 - Tools: available through `tools/list` and `tools/call`.
 - Write mode: generation tools require `dry_run = false` and `output_root = "<MOD_OUTPUT_ROOT>"`.
+- Project index: `index_hoi4_project` returns structured definitions, references, and files for a mod root and optional game roots.
+- Project validation: `validate_hoi4_project` returns red/yellow/green static checks for duplicate IDs, brace balance, missing GUI/GFX/localisation links, and `replace_path` risks.
+- Repair checks: `repair_hoi4_project` can dry-run or apply UTF-8 BOM rules, Paradox script formatting, and audio checks. If ffmpeg is missing, dry-run returns guidance; after user approval, `dry_run=false` with `install_ffmpeg=true` allows a silent installation attempt.
+- Existing-file edits: `edit_hoi4_script_file` replaces or inserts named blocks in an existing HOI4 script file with dry-run preview and brace checks. Pass `workspace_root` for the current mod or workspace so the target file is restricted to that tree.
+- Experimental assets: `generate_gui_gfx_asset` can create local procedural PNG files, `.gfx` sprite registration, and optional `.gui` files without external image models. Writing requires `approved=true`.
 - Environment discovery: `discover_hoi4_environment` can find `<HOI4_GAME_PATH>`, `game_executable_path`, `<HOI4_DOCUMENT_PATH>`, `error_log_path`, and game version when local HOI4 is installed.
 - Debug preflight: `validate_hoi4_debug_run` checks launcher descriptors, playset state, clean document folders, and can optionally launch `hoi4.exe -gdpr-compliant -debug_mode`.
 - Log triage: `classify_error_log` groups `error.log` entries by likely HOI4 subsystem and can correlate entries with changed mod-relative paths.
@@ -176,6 +181,10 @@ After adding the server to a client, ask the client to list MCP resources and re
 rhoiscribe://hoi4/knowledge/catalog
 ```
 
-Then call `generate_localisation_batch` with `dry_run = true` before allowing write mode. The returned file path should stay under a valid `localisation/<language>/` tree, including nested subdirectories when they match the user's mod, and the encoding should be `utf-8-bom`.
+Then call `generate_localisation_batch` with `dry_run = true` before allowing write mode. The returned file path should stay under a valid `localisation/<language>/` tree, including nested subdirectories when they match the user's mod. Filenames use the usual `_l_<language>.yml` suffix, and the encoding should be `utf-8-bom`.
+
+For project-level checks, call `index_hoi4_project`, then `validate_hoi4_project`, then `repair_hoi4_project` with `dry_run = true`. Only use repair apply mode after reviewing the returned changes.
+
+For experimental asset generation, call `generate_gui_gfx_asset` with `dry_run = true` first. Set `approved=true` only after the user agrees to create new procedural GUI/GFX assets instead of reusing existing project art.
 
 For local game validation, call `discover_hoi4_environment` first, then pass its returned paths into `validate_hoi4_debug_run` with `launch = false`. Only set `launch = true` after the preflight result is green and the user wants RHoiScribe to start the game.
