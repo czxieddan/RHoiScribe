@@ -299,33 +299,30 @@ mod tests {
     }
 
     #[test]
-    fn visitor_docs_explain_skill_packages_and_direct_commands() {
-        let docs = [
+    fn visitor_docs_link_to_skill_setup() {
+        let readmes = [
             include_str!("../../README.md"),
             include_str!("../../docs/README.zh-CN.md"),
             include_str!("../../docs/README.ru.md"),
             include_str!("../../docs/README.ja.md"),
-            include_str!("../../docs/client-setup.md"),
         ];
 
-        for doc in docs {
+        for doc in readmes {
             assert!(doc.contains("SKILL.md"));
-            assert!(doc.contains("--skill list-tools"));
-            assert!(doc.contains("--skill list-resources"));
-            assert!(doc.contains("--skill list-prompts"));
+            assert!(doc.contains("client-setup.md"));
         }
 
-        assert!(
-            include_str!("../../docs/client-setup.md")
-                .contains("rhoiscribe-skill-windows-x86_64.zip")
-        );
-        assert!(
-            include_str!("../../docs/client-setup.md")
-                .contains("rhoiscribe-skill-linux-x86_64.zip")
-        );
-        assert!(
-            include_str!("../../docs/client-setup.md")
-                .contains("rhoiscribe-skill-macos-universal.zip")
-        );
+        let client_setup = include_str!("../../docs/client-setup.md");
+        for command in [
+            "--skill list-tools",
+            "--skill list-resources",
+            "--skill list-prompts",
+        ] {
+            assert!(client_setup.contains(command));
+        }
+
+        assert!(client_setup.contains("rhoiscribe-skill-windows-x86_64.zip"));
+        assert!(client_setup.contains("rhoiscribe-skill-linux-x86_64.zip"));
+        assert!(client_setup.contains("rhoiscribe-skill-macos-universal.zip"));
     }
 }

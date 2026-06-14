@@ -129,20 +129,77 @@ pub fn validate_hoi4_debug_run(request: Hoi4DebugRunRequest) -> Hoi4DebugRunResu
     let game_path = PathBuf::from(&request.game_path);
     let document_path = PathBuf::from(&request.document_path);
     let workspace_mod_path = PathBuf::from(&request.workspace_mod_path);
-    let mut checks = Vec::new();
+    let checks = debug_run_checks(&request, &game_path, &document_path, &workspace_mod_path);
+    let ready = checks.iter().all(|check| check.status == "green");
+    let launch = maybe_launch_debug_run(&game_path, ready, request.launch.unwrap_or(false));
 
+    Hoi4DebugRunResult {
+        ready,
+        launched: launch.launched,
+        pid: launch.pid,
+        exe_args: DEBUG_EXE_ARGS
+            .iter()
+            .map(|arg| (*arg).to_string())
+            .collect(),
+        checks,
+        messages: launch.messages,
+    }
+}
+
+fn debug_run_checks(
+    request: &Hoi4DebugRunRequest,
+    game_path: &Path,
+    document_path: &Path,
+    workspace_mod_path: &Path,
+) -> Vec<Hoi4QualityCheck> {
+    let mut checks = Vec::new();
+    check_game_and_document_paths(&mut checks, game_path, document_path);
+    check_document_output_folders(&mut checks, document_path);
+    let workspace_descriptor = check_workspace_descriptor(&mut checks, workspace_mod_path);
+    let expected_mod_names = expected_mod_names(&workspace_descriptor, &request.dependencies);
+    let document_mod_dir = document_path.join("mod");
     push_check(
         &mut checks,
-        "game_path",
-        is_valid_game_path(&game_path),
+        "document_mod_folder",
+        document_mod_dir.is_dir(),
         format!(
-            "{} must contain hoi4.exe plus common, history, events, localisation, and map",
-            clean_display_path(&game_path)
+            "{} must contain launcher .mod descriptors",
+            document_mod_dir.display()
         ),
     );
-
-    push_check(
+    let document_descriptors = read_document_mod_descriptors(&document_mod_dir);
+    check_expected_mod_descriptors(&mut checks, &expected_mod_names, &document_descriptors);
+    check_workspace_mod_pointer(
         &mut checks,
+        workspace_mod_path,
+        &workspace_descriptor,
+        &document_descriptors,
+    );
+    check_playset(
+        &mut checks,
+        document_path,
+        &document_descriptors,
+        &expected_mod_names,
+    );
+    checks
+}
+
+fn check_game_and_document_paths(
+    checks: &mut Vec<Hoi4QualityCheck>,
+    game_path: &Path,
+    document_path: &Path,
+) {
+    push_check(
+        checks,
+        "game_path",
+        is_valid_game_path(game_path),
+        format!(
+            "{} must contain hoi4.exe plus common, history, events, localisation, and map",
+            clean_display_path(game_path)
+        ),
+    );
+    push_check(
+        checks,
         "document_path",
         document_path.is_dir(),
         format!(
@@ -150,12 +207,14 @@ pub fn validate_hoi4_debug_run(request: Hoi4DebugRunRequest) -> Hoi4DebugRunResu
             document_path.display()
         ),
     );
+}
 
+fn check_document_output_folders(checks: &mut Vec<Hoi4QualityCheck>, document_path: &Path) {
     for folder in ["map", "localisation", "history"] {
         let folder_path = document_path.join(folder);
         let empty = folder_absent_or_empty(&folder_path);
         push_check(
-            &mut checks,
+            checks,
             &format!("document_{}_empty", folder),
             empty,
             if folder_path.exists() {
@@ -171,95 +230,93 @@ pub fn validate_hoi4_debug_run(request: Hoi4DebugRunRequest) -> Hoi4DebugRunResu
             },
         );
     }
+}
 
+fn check_workspace_descriptor(
+    checks: &mut Vec<Hoi4QualityCheck>,
+    workspace_mod_path: &Path,
+) -> Option<ModDescriptor> {
     let workspace_descriptor_path = workspace_mod_path.join("descriptor.mod");
     let workspace_descriptor = read_descriptor(&workspace_descriptor_path);
     push_check(
-        &mut checks,
+        checks,
         "workspace_descriptor",
         workspace_descriptor.is_some(),
         format!("{} must exist", workspace_descriptor_path.display()),
     );
+    workspace_descriptor
+}
 
+fn expected_mod_names(
+    workspace_descriptor: &Option<ModDescriptor>,
+    extra_dependencies: &[String],
+) -> BTreeSet<String> {
     let mut expected_mod_names = BTreeSet::new();
-    if let Some(descriptor) = &workspace_descriptor {
+    if let Some(descriptor) = workspace_descriptor {
         if let Some(name) = &descriptor.name {
             expected_mod_names.insert(name.clone());
         }
         expected_mod_names.extend(descriptor.dependencies.iter().cloned());
     }
-    expected_mod_names.extend(request.dependencies.iter().cloned());
+    expected_mod_names.extend(extra_dependencies.iter().cloned());
+    expected_mod_names
+}
 
-    let document_mod_dir = document_path.join("mod");
-    push_check(
-        &mut checks,
-        "document_mod_folder",
-        document_mod_dir.is_dir(),
-        format!(
-            "{} must contain launcher .mod descriptors",
-            document_mod_dir.display()
-        ),
-    );
-
-    let document_descriptors = read_document_mod_descriptors(&document_mod_dir);
-    for expected in &expected_mod_names {
+fn check_expected_mod_descriptors(
+    checks: &mut Vec<Hoi4QualityCheck>,
+    expected_mod_names: &BTreeSet<String>,
+    document_descriptors: &[(PathBuf, ModDescriptor)],
+) {
+    for expected in expected_mod_names {
         let exists = document_descriptors
             .iter()
             .any(|(_, descriptor)| descriptor.name.as_deref() == Some(expected));
         push_check(
-            &mut checks,
+            checks,
             &format!("mod_descriptor_{}", safe_check_name(expected)),
             exists,
             format!("document mod descriptor for `{}` must exist", expected),
         );
     }
+}
 
-    check_workspace_mod_pointer(
-        &mut checks,
-        &workspace_mod_path,
-        &workspace_descriptor,
-        &document_descriptors,
-    );
-    check_playset(
-        &mut checks,
-        &document_path,
-        &document_descriptors,
-        &expected_mod_names,
-    );
+struct DebugLaunch {
+    launched: bool,
+    pid: Option<u32>,
+    messages: Vec<String>,
+}
 
-    let ready = checks.iter().all(|check| check.status == "green");
-    let mut launched = false;
-    let mut pid = None;
-    let mut messages = Vec::new();
+fn maybe_launch_debug_run(game_path: &Path, ready: bool, requested: bool) -> DebugLaunch {
+    let mut launch = DebugLaunch {
+        launched: false,
+        pid: None,
+        messages: Vec::new(),
+    };
+    if !requested {
+        return launch;
+    }
+    if !ready {
+        launch
+            .messages
+            .push("launch skipped because at least one preflight check is red".to_string());
+        return launch;
+    }
 
-    if request.launch.unwrap_or(false) {
-        if ready {
-            match launch_hoi4(&game_path) {
-                Ok(process_id) => {
-                    launched = true;
-                    pid = Some(process_id);
-                    messages.push("hoi4.exe launched with debug arguments".to_string());
-                }
-                Err(error) => {
-                    messages.push(format!("failed to launch hoi4.exe: {}", error));
-                }
-            }
-        } else {
-            messages.push("launch skipped because at least one preflight check is red".to_string());
+    match launch_hoi4(game_path) {
+        Ok(process_id) => {
+            launch.launched = true;
+            launch.pid = Some(process_id);
+            launch
+                .messages
+                .push("hoi4.exe launched with debug arguments".to_string());
+        }
+        Err(error) => {
+            launch
+                .messages
+                .push(format!("failed to launch hoi4.exe: {}", error));
         }
     }
-
-    Hoi4DebugRunResult {
-        ready,
-        launched,
-        pid,
-        exe_args: DEBUG_EXE_ARGS
-            .iter()
-            .map(|arg| (*arg).to_string())
-            .collect(),
-        checks,
-        messages,
-    }
+    launch
 }
 
 fn find_from_steam(
@@ -450,31 +507,39 @@ fn scan_root_for_hoi4(root: PathBuf, stop: Arc<AtomicBool>) -> Option<PathBuf> {
             return None;
         }
 
-        if path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.eq_ignore_ascii_case(HOI4_FOLDER_NAME))
-            && is_valid_game_path(&path)
-        {
+        if is_hoi4_install_candidate(&path) {
             stop.store(true, Ordering::Relaxed);
             return Some(path);
         }
 
-        let Ok(entries) = fs::read_dir(&path) else {
-            continue;
-        };
-
-        for entry in entries.flatten() {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if file_type.is_dir() && should_scan_descend(&entry.path()) {
-                pending.push(entry.path());
-            }
-        }
+        pending.extend(scan_child_directories(&path));
     }
 
     None
+}
+
+fn is_hoi4_install_candidate(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case(HOI4_FOLDER_NAME))
+        && is_valid_game_path(path)
+}
+
+fn scan_child_directories(path: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(path) else {
+        return Vec::new();
+    };
+
+    entries.flatten().filter_map(scan_child_directory).collect()
+}
+
+fn scan_child_directory(entry: fs::DirEntry) -> Option<PathBuf> {
+    entry
+        .file_type()
+        .ok()
+        .filter(|file_type| file_type.is_dir())?;
+    let path = entry.path();
+    should_scan_descend(&path).then_some(path)
 }
 
 fn should_scan_descend(path: &Path) -> bool {
@@ -783,33 +848,43 @@ fn quoted_strings(content: &str) -> Vec<String> {
             continue;
         }
 
-        let mut value = String::new();
-        let mut escaped = false;
-        for next in chars.by_ref() {
-            if escaped {
-                value.push(match next {
-                    'n' => '\n',
-                    't' => '\t',
-                    '"' => '"',
-                    '\\' => '\\',
-                    other => other,
-                });
-                escaped = false;
-                continue;
-            }
-            if next == '\\' {
-                escaped = true;
-                continue;
-            }
-            if next == '"' {
-                break;
-            }
-            value.push(next);
-        }
-        values.push(value);
+        values.push(read_quoted_value(&mut chars));
     }
 
     values
+}
+
+fn read_quoted_value<I>(chars: &mut I) -> String
+where
+    I: Iterator<Item = char>,
+{
+    let mut value = String::new();
+    let mut escaped = false;
+
+    for next in chars.by_ref() {
+        if escaped {
+            value.push(unescape_quoted_char(next));
+            escaped = false;
+        } else if next == '\\' {
+            escaped = true;
+        } else if next == '"' {
+            break;
+        } else {
+            value.push(next);
+        }
+    }
+
+    value
+}
+
+fn unescape_quoted_char(character: char) -> char {
+    match character {
+        'n' => '\n',
+        't' => '\t',
+        '"' => '"',
+        '\\' => '\\',
+        other => other,
+    }
 }
 
 fn paths_point_to_same_location(path_value: &str, expected: &Path) -> bool {
@@ -883,11 +958,8 @@ mod tests {
         DiscoverHoi4EnvironmentRequest, Hoi4DebugRunRequest, discover_hoi4_environment,
         parse_vdf_value, validate_hoi4_debug_run,
     };
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use crate::tools::test_support::unique_test_dir;
+    use std::{fs, path::Path};
 
     #[test]
     fn steam_manifest_discovers_game_path_and_launcher_settings() {
@@ -1040,11 +1112,7 @@ mod tests {
         }
     }
 
-    fn unique_temp_dir(prefix: &str) -> PathBuf {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time should be after unix epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!("rhoiscribe-{}-{}", prefix, suffix))
+    fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+        unique_test_dir(prefix)
     }
 }

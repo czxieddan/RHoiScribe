@@ -61,52 +61,19 @@ The goal is simple: reduce wasted agent work caused by repeated web searches, st
 - Offline or low-search development sessions where the agent should read bundled HOI4 guidance before writing files.
 - Teams that want generated content to follow predictable mod-root paths and reviewable output shapes.
 
-<h2 align="center">What Agents Get</h2>
+<h2 align="center">What It Provides</h2>
 
-<h3 align="center">Prompts</h3>
+RHoiScribe gives agents a local HOI4 knowledge layer, reusable prompts, and file-oriented tools for common modding work. MCP clients can discover the exact prompts, resources, and tools through the standard MCP list methods after the server is configured.
 
-Agents can use built-in prompts for:
+At a high level, it helps agents with:
 
-- mod feature planning
-- HOI4 script writing
-- localisation writing
-- GUI, GFX, and scripted GUI work
-- generated-content review
+- project structure and reference awareness before broad edits
+- red/yellow/green checks for load-risk issues before delivery
+- fast encoding, formatting, and media convention checks
+- safe edits to existing files while respecting workspace conventions
+- experimental GUI/GFX asset creation when the user approves new procedural art
 
-Prompt names currently include `hoi4_mod_planner`, `hoi4_script_writer`, `hoi4_localisation_writer`, `hoi4_gui_assistant`, and `hoi4_review`.
-
-<h3 align="center">Resources</h3>
-
-Agents can read local resources instead of starting from a blank prompt:
-
-- `rhoiscribe://hoi4/latest-update`
-- `rhoiscribe://hoi4/knowledge/catalog`
-- `rhoiscribe://hoi4/knowledge/<topic_id>`
-
-The knowledge catalog is structured for agent use. Topics contain category, file types, tags, syntax examples, relationships to other HOI4 systems, validation guidance, and source references. Current coverage includes script basics, scopes, triggers, effects, modifiers, variables, MTTH variables, unique identifier checks, arrays, localisation, scripted localisation, scripted triggers/effects, GUI, scripted GUI, focuses, events, detailed on_action scope families, decisions, missions, ideas, characters, history, map files, technology, equipment, units, AI, diplomacy, game rules, defines, bookmarks, audio, game path discovery, debug launch checks, error log triage, and common loading errors.
-
-<h3 align="center">Tools</h3>
-
-Agents can call tools for repeatable generation and validation:
-
-- `generate_localisation_batch`
-- `generate_focus_batch`
-- `generate_event_batch`
-- `generate_decision_batch`
-- `search_hoi4_knowledge`
-- `scan_unique_identifiers`
-- `discover_hoi4_environment`
-- `validate_hoi4_debug_run`
-- `classify_error_log`
-- `validate_hoi4_paths`
-- `format_paradox_script`
-
-Generation tools support dry-run previews. In write mode they require an `output_root` and write paths relative to the target mod root.
-Knowledge search returns matching topic IDs and MCP resource URIs for queries such as `mtth variables`, `decision mission blocks`, or `on_actions FROM.FROM`.
-Identifier scanning checks batches of proposed new IDs against structured HOI4 definitions and reports duplicates, existing output files, and `replace_path` risks.
-Environment discovery finds the HOI4 install through Steam metadata first, then optional folder scanning, and reads `launcher-settings.json` for the document data path, `hoi4.exe` path, `logs/error.log` path, and game version.
-Debug-run validation checks the document `map`, `localisation`, and `history` folders, active launcher mod descriptors, the current playset, dependency descriptors, and the workspace mod path before an optional `hoi4.exe -gdpr-compliant -debug_mode` launch.
-Error-log classification groups `error.log` lines by likely HOI4 subsystem and links them back to changed paths when the agent has a diff or generated file list.
+The bundled Skill package exposes the same capabilities for agents that prefer a local Skill folder instead of an MCP server entry.
 
 <h2 align="center">Help Improve RHoiScribe</h2>
 
@@ -153,131 +120,4 @@ Linux and macOS users can run the same option on their downloaded file:
 ./rhoiscribe-macos-universal --print-command
 ```
 
-Run it directly only when you want to start the stdio MCP server by hand:
-
-```powershell
-.\rhoiscribe-windows-x86_64.exe
-```
-
-```bash
-./rhoiscribe-linux-x86_64
-./rhoiscribe-macos-universal
-```
-
-Skill packages can also be called directly for JSON output:
-
-```powershell
-.\rhoiscribe-windows-x86_64.exe --skill list-tools
-.\rhoiscribe-windows-x86_64.exe --skill list-resources
-.\rhoiscribe-windows-x86_64.exe --skill list-prompts
-.\rhoiscribe-windows-x86_64.exe --skill read-resource "rhoiscribe://hoi4/latest-update"
-```
-
-```bash
-./rhoiscribe-linux-x86_64 --skill call-tool "search_hoi4_knowledge" '{"query":"on_actions ROOT FROM"}'
-```
-
 For Codex, Claude Code, and generic MCP configuration examples, see [docs/client-setup.md](docs/client-setup.md).
-
-<h2 align="center">MCP Surface</h2>
-
-After the client starts RHoiScribe, the agent can use standard MCP methods:
-
-- `prompts/list`
-- `prompts/get`
-- `resources/list`
-- `resources/read`
-- `tools/list`
-- `tools/call`
-
-Example resource read:
-
-```text
-rhoiscribe://hoi4/knowledge/scripted_gui.dynamic_lists
-```
-
-Example environment discovery call:
-
-```json
-{
-  "scan_fallback": true
-}
-```
-
-Example debug preflight call:
-
-```json
-{
-  "game_path": "<HOI4_GAME_PATH>",
-  "document_path": "<HOI4_DOCUMENT_PATH>",
-  "workspace_mod_path": "<MOD_OUTPUT_ROOT>",
-  "launch": false
-}
-```
-
-Example error log classification call:
-
-```json
-{
-  "error_log_path": "<HOI4_DOCUMENT_PATH>/logs/error.log",
-  "changed_paths": ["common/national_focus/CHI.txt"],
-  "limit": 5
-}
-```
-
-Example `tools/call` arguments for a localisation dry run:
-
-```json
-{
-  "language": "l_simp_chinese",
-  "file_stem": "common/autonomy/CHI",
-  "key_prefix": "CHI",
-  "entries": [
-    {
-      "id": "industrial_recovery",
-      "title": "Industrial Recovery",
-      "description": "Rebuild the industrial base."
-    }
-  ],
-  "dry_run": true
-}
-```
-
-Write mode adds a mod output root:
-
-```json
-{
-  "language": "l_simp_chinese",
-  "file_stem": "common/autonomy/CHI",
-  "entries": [
-    {
-      "id": "industrial_recovery",
-      "title": "Industrial Recovery"
-    }
-  ],
-  "dry_run": false,
-  "output_root": "<MOD_OUTPUT_ROOT>"
-}
-```
-
-The generated localisation file is written with UTF-8 BOM when write mode is enabled.
-Use `file_stem` values such as `common/autonomy/CHI`, or complete mod-relative paths such as `localisation/simp_chinese/common/autonomy/CHI_l_simp_chinese.yml`, when the user's mod already organizes localisation in nested folders.
-
-<h2 align="center">Output Model</h2>
-
-Generation tools return structured file plans:
-
-```json
-{
-  "dry_run": true,
-  "files": [
-    {
-      "path": "localisation/simp_chinese/common/autonomy/CHI_l_simp_chinese.yml",
-      "encoding": "utf-8-bom",
-      "summary": "HOI4 localisation file"
-    }
-  ],
-  "messages": ["dry-run only; no files were written"]
-}
-```
-Paths are mod-relative and can use nested HOI4-readable folders when they match the user's workspace. Unsafe paths, drive-prefixed paths, and traversal attempts are rejected before writing.
