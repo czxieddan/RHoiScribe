@@ -310,51 +310,80 @@ fn brace_balance_checks(file: ProjectFile) -> Vec<ProjectValidationCheck> {
     let Ok(content) = fs::read_to_string(&file.absolute_path) else {
         return Vec::new();
     };
-    let mut depth = 0isize;
-    let mut first_underflow = None;
-    let mut last_line = 1usize;
+    let outcome = brace_balance_outcome(&content);
 
-    for token in tokenize(&content) {
-        last_line = token.line;
-        match token.kind {
-            TokenKind::Open => depth += 1,
-            TokenKind::Close => {
-                depth -= 1;
-                if depth < 0 && first_underflow.is_none() {
-                    first_underflow = Some(token.line);
-                }
-            }
-            _ => {}
-        }
+    if let Some(line) = outcome.first_underflow {
+        return vec![brace_underflow_check(&file.relative_path, line)];
     }
-
-    if let Some(line) = first_underflow {
-        return vec![check(
-            "brace_balance",
-            "red",
-            "error",
+    if outcome.depth != 0 {
+        return vec![brace_depth_check(
             &file.relative_path,
-            line,
-            "Closing brace appears before a matching opening brace.",
-            Some("Remove the extra closing brace or add the missing opening block.".to_string()),
-        )];
-    }
-    if depth != 0 {
-        return vec![check(
-            "brace_balance",
-            "red",
-            "error",
-            &file.relative_path,
-            last_line,
-            &format!(
-                "Brace balance ends at {}; HOI4 will not parse this file reliably.",
-                depth
-            ),
-            Some("Add or remove braces until the file ends at depth 0.".to_string()),
+            outcome.last_line,
+            outcome.depth,
         )];
     }
 
     Vec::new()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BraceBalanceOutcome {
+    depth: isize,
+    first_underflow: Option<usize>,
+    last_line: usize,
+}
+
+fn brace_balance_outcome(content: &str) -> BraceBalanceOutcome {
+    let mut outcome = BraceBalanceOutcome {
+        depth: 0,
+        first_underflow: None,
+        last_line: 1,
+    };
+    for token in tokenize(content) {
+        update_brace_outcome(&mut outcome, token.kind, token.line);
+    }
+    outcome
+}
+
+fn update_brace_outcome(outcome: &mut BraceBalanceOutcome, kind: TokenKind, line: usize) {
+    outcome.last_line = line;
+    match kind {
+        TokenKind::Open => outcome.depth += 1,
+        TokenKind::Close => {
+            outcome.depth -= 1;
+            if outcome.depth < 0 && outcome.first_underflow.is_none() {
+                outcome.first_underflow = Some(line);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn brace_underflow_check(path: &str, line: usize) -> ProjectValidationCheck {
+    check(
+        "brace_balance",
+        "red",
+        "error",
+        path,
+        line,
+        "Closing brace appears before a matching opening brace.",
+        Some("Remove the extra closing brace or add the missing opening block.".to_string()),
+    )
+}
+
+fn brace_depth_check(path: &str, line: usize, depth: isize) -> ProjectValidationCheck {
+    check(
+        "brace_balance",
+        "red",
+        "error",
+        path,
+        line,
+        &format!(
+            "Brace balance ends at {}; HOI4 will not parse this file reliably.",
+            depth
+        ),
+        Some("Add or remove braces until the file ends at depth 0.".to_string()),
+    )
 }
 
 fn missing_localisation_checks(
@@ -590,7 +619,7 @@ fn status_rank(status: &str) -> u8 {
 mod tests {
     use std::fs;
 
-    use super::{ProjectValidationRequest, validate_hoi4_project};
+    use super::{ProjectValidationCheck, ProjectValidationRequest, validate_hoi4_project};
     use crate::tools::{ScanRoot, test_support::unique_test_dir};
 
     #[test]
@@ -598,23 +627,23 @@ mod tests {
         let root = unique_test_dir("project-validation");
         write_file(
             &root,
-            "common/national_focus/CHI_tree.txt",
-            "focus_tree = {\n\tid = CHI_tree\n\tfocus = { id = CHI_rebuild title = CHI_rebuild desc = CHI_rebuild_desc }\n\tfocus = { id = CHI_rebuild }\n",
+            "common/national_focus/sample_tree.txt",
+            "focus_tree = {\n\tid = sample_tree\n\tfocus = { id = sample_rebuild title = sample_rebuild desc = sample_rebuild_desc }\n\tfocus = { id = sample_rebuild }\n",
         );
         write_file(
             &root,
-            "interface/CHI_interface.gfx",
-            "spriteTypes = { spriteType = { name = \"GFX_CHI_panel\" texturefile = \"gfx/interface/CHI/missing_panel.png\" } }\n",
+            "interface/sample_interface.gfx",
+            "spriteTypes = { spriteType = { name = \"GFX_sample_panel\" texturefile = \"gfx/interface/sample/missing_panel.png\" } }\n",
         );
         write_file(
             &root,
-            "interface/CHI_interface.gui",
-            "guiTypes = { containerWindowType = { name = \"CHI_panel\" background = { quadTextureSprite = \"GFX_CHI_missing\" } } }\n",
+            "interface/sample_interface.gui",
+            "guiTypes = { containerWindowType = { name = \"sample_panel\" background = { quadTextureSprite = \"GFX_sample_missing\" } } }\n",
         );
         write_file(
             &root,
-            "localisation/simp_chinese/CHI_l_simp_chinese.yml",
-            "\u{feff}l_simp_chinese:\n CHI_rebuild:0 \"重建\"\n",
+            "localisation/simp_chinese/validation_fixture_l_simp_chinese.yml",
+            "\u{feff}l_simp_chinese:\n sample_rebuild:0 \"重建\"\n",
         );
 
         let result = validate_hoi4_project(ProjectValidationRequest {
@@ -628,50 +657,32 @@ mod tests {
 
         assert_eq!(result.status, "red");
         assert!(result.index_summary.contains("file"));
-        assert!(
-            result
-                .checks
-                .iter()
-                .any(|check| check.id == "duplicate_definition"
-                    && check.status == "red"
-                    && check.message.contains("CHI_rebuild"))
+        assert_check(
+            &result.checks,
+            "duplicate_definition",
+            "red",
+            "sample_rebuild",
         );
-        assert!(
-            result
-                .checks
-                .iter()
-                .any(|check| check.id == "brace_balance" && check.status == "red")
+        assert_check(&result.checks, "brace_balance", "red", "");
+        assert_check(
+            &result.checks,
+            "missing_gfx_texture",
+            "red",
+            "missing_panel",
         );
-        assert!(
-            result
-                .checks
-                .iter()
-                .any(|check| check.id == "missing_gfx_texture"
-                    && check.status == "red"
-                    && check.path == "interface/CHI_interface.gfx")
+        assert_check(
+            &result.checks,
+            "missing_gfx_sprite",
+            "yellow",
+            "GFX_sample_missing",
         );
-        assert!(
-            result
-                .checks
-                .iter()
-                .any(|check| check.id == "missing_gfx_sprite"
-                    && check.status == "yellow"
-                    && check.message.contains("GFX_CHI_missing"))
+        assert_check(
+            &result.checks,
+            "missing_localisation",
+            "yellow",
+            "sample_rebuild_desc",
         );
-        assert!(
-            result
-                .checks
-                .iter()
-                .any(|check| check.id == "missing_localisation"
-                    && check.status == "yellow"
-                    && check.message.contains("CHI_rebuild_desc"))
-        );
-        assert!(
-            result
-                .checks
-                .iter()
-                .any(|check| check.id == "index_completed" && check.status == "green")
-        );
+        assert_check(&result.checks, "index_completed", "green", "");
 
         fs::remove_dir_all(root).expect("temp output should clean up");
     }
@@ -682,13 +693,13 @@ mod tests {
         let game_root = unique_test_dir("project-validation-game");
         write_file(
             &mod_root,
-            "interface/CHI_interface.gfx",
-            "spriteTypes = { spriteType = { name = \"GFX_CHI_panel\" texturefile = \"gfx/interface/vanilla/panel.dds\" } }\n",
+            "interface/sample_interface.gfx",
+            "spriteTypes = { spriteType = { name = \"GFX_sample_panel\" texturefile = \"gfx/interface/vanilla/panel.dds\" } }\n",
         );
         write_file(
             &mod_root,
-            "interface/CHI_interface.gui",
-            "guiTypes = { containerWindowType = { name = \"CHI_panel\" background = { quadTextureSprite = \"GFX_CHI_panel\" } } }\n",
+            "interface/sample_interface.gui",
+            "guiTypes = { containerWindowType = { name = \"sample_panel\" background = { quadTextureSprite = \"GFX_sample_panel\" } } }\n",
         );
         write_file(
             &game_root,
@@ -718,7 +729,7 @@ mod tests {
                 .any(|check| check.id == "missing_gfx_texture")
         );
         assert!(!result.checks.iter().any(|check| {
-            check.id == "missing_localisation" && check.message.contains("CHI_panel")
+            check.id == "missing_localisation" && check.message.contains("sample_panel")
         }));
 
         fs::remove_dir_all(mod_root).expect("temp output should clean up");
@@ -731,5 +742,13 @@ mod tests {
             fs::create_dir_all(parent).expect("fixture parent should be created");
         }
         fs::write(path, content).expect("fixture file should be written");
+    }
+
+    fn assert_check(checks: &[ProjectValidationCheck], id: &str, status: &str, text: &str) {
+        assert!(checks.iter().any(|check| {
+            check.id == id
+                && check.status == status
+                && (text.is_empty() || check.message.contains(text))
+        }));
     }
 }

@@ -265,33 +265,59 @@ fn named_block_spans(text: &str, name: &str) -> Vec<BlockSpan> {
     let mut index = 0usize;
 
     while index < tokens.len() {
-        if index + 2 < tokens.len()
-            && matches!(tokens[index].kind, TokenKind::Word | TokenKind::String)
-            && tokens[index + 1].kind == TokenKind::Equals
-            && tokens[index + 2].kind == TokenKind::Open
-        {
-            stack.push(BlockSpan {
-                name: tokens[index].text.clone(),
-                start: tokens[index].start,
-                open: tokens[index + 2].start,
-                close: tokens[index + 2].start,
-            });
+        if push_block_start(&tokens, &mut stack, index) {
             index += 3;
-            continue;
+        } else {
+            close_block_span(&tokens, &mut stack, &mut spans, name, index);
+            index += 1;
         }
-
-        if tokens[index].kind == TokenKind::Close
-            && let Some(mut span) = stack.pop()
-        {
-            span.close = tokens[index].start;
-            if span.name == name {
-                spans.push(span);
-            }
-        }
-        index += 1;
     }
 
     spans
+}
+
+fn push_block_start(
+    tokens: &[super::paradox_lexer::Token],
+    stack: &mut Vec<BlockSpan>,
+    index: usize,
+) -> bool {
+    if !is_named_block_start(tokens, index) {
+        return false;
+    }
+
+    stack.push(BlockSpan {
+        name: tokens[index].text.clone(),
+        start: tokens[index].start,
+        open: tokens[index + 2].start,
+        close: tokens[index + 2].start,
+    });
+    true
+}
+
+fn is_named_block_start(tokens: &[super::paradox_lexer::Token], index: usize) -> bool {
+    index + 2 < tokens.len()
+        && matches!(tokens[index].kind, TokenKind::Word | TokenKind::String)
+        && tokens[index + 1].kind == TokenKind::Equals
+        && tokens[index + 2].kind == TokenKind::Open
+}
+
+fn close_block_span(
+    tokens: &[super::paradox_lexer::Token],
+    stack: &mut Vec<BlockSpan>,
+    spans: &mut Vec<BlockSpan>,
+    name: &str,
+    index: usize,
+) {
+    if tokens[index].kind != TokenKind::Close {
+        return;
+    }
+    let Some(mut span) = stack.pop() else {
+        return;
+    };
+    span.close = tokens[index].start;
+    if span.name == name {
+        spans.push(span);
+    }
 }
 
 fn ensure_balanced_braces(text: &str) -> Result<(), String> {
@@ -373,18 +399,18 @@ mod tests {
     #[test]
     fn dry_run_replaces_named_block_without_writing() {
         let root = unique_test_dir("script-edit");
-        let path = root.join("common/decisions/CHI_decisions.txt");
+        let path = root.join("common/decisions/sample_decisions.txt");
         write_file(
             &path,
-            "CHI_category = {\n\tCHI_old_decision = {\n\t\tavailable = { always = yes }\n\t}\n}\n",
+            "sample_category = {\n\tsample_old_decision = {\n\t\tavailable = { always = yes }\n\t}\n}\n",
         );
 
         let result = edit_hoi4_script_file(EditHoi4ScriptFileRequest {
             path: path.to_string_lossy().to_string(),
             workspace_root: Some(root.to_string_lossy().to_string()),
             operation: ScriptEditOperation::ReplaceNamedBlock {
-                block_name: "CHI_old_decision".to_string(),
-                content: "CHI_old_decision = { complete_effect = { add_political_power = 25 } }"
+                block_name: "sample_old_decision".to_string(),
+                content: "sample_old_decision = { complete_effect = { add_political_power = 25 } }"
                     .to_string(),
             },
             dry_run: true,
@@ -408,7 +434,7 @@ mod tests {
     #[test]
     fn apply_inserts_block_and_preserves_no_bom_script_encoding() {
         let root = unique_test_dir("script-edit");
-        let path = root.join("common/scripted_effects/CHI_effects.txt");
+        let path = root.join("common/scripted_effects/sample_effects.txt");
         write_file(&path, "effects = {\n}\n");
 
         let result = edit_hoi4_script_file(EditHoi4ScriptFileRequest {
@@ -416,7 +442,7 @@ mod tests {
             workspace_root: Some(root.to_string_lossy().to_string()),
             operation: ScriptEditOperation::InsertIntoBlock {
                 parent_block: "effects".to_string(),
-                content: "CHI_new_effect = { add_stability = 0.05 }".to_string(),
+                content: "sample_new_effect = { add_stability = 0.05 }".to_string(),
                 position: Some("end".to_string()),
             },
             dry_run: false,
@@ -429,7 +455,7 @@ mod tests {
         let bytes = fs::read(&path).expect("edited file should read");
         assert!(!bytes.starts_with(&[0xEF, 0xBB, 0xBF]));
         let text = String::from_utf8(bytes).expect("script should remain utf-8");
-        assert!(text.contains("CHI_new_effect = {"));
+        assert!(text.contains("sample_new_effect = {"));
         assert!(text.contains("\n\t\tadd_stability = 0.05"));
 
         fs::remove_dir_all(root).expect("temp output should clean up");
@@ -438,18 +464,18 @@ mod tests {
     #[test]
     fn rejects_duplicate_inserted_block_names() {
         let root = unique_test_dir("script-edit");
-        let path = root.join("common/decisions/CHI_decisions.txt");
+        let path = root.join("common/decisions/sample_decisions.txt");
         write_file(
             &path,
-            "CHI_category = {\n\tCHI_decision = { available = { always = yes } }\n}\n",
+            "sample_category = {\n\tsample_decision = { available = { always = yes } }\n}\n",
         );
 
         let error = edit_hoi4_script_file(EditHoi4ScriptFileRequest {
             path: path.to_string_lossy().to_string(),
             workspace_root: Some(root.to_string_lossy().to_string()),
             operation: ScriptEditOperation::InsertIntoBlock {
-                parent_block: "CHI_category".to_string(),
-                content: "CHI_decision = { complete_effect = { add_political_power = 5 } }"
+                parent_block: "sample_category".to_string(),
+                content: "sample_decision = { complete_effect = { add_political_power = 5 } }"
                     .to_string(),
                 position: Some("end".to_string()),
             },
@@ -467,15 +493,15 @@ mod tests {
     fn rejects_paths_outside_workspace_root() {
         let workspace = unique_test_dir("script-edit-workspace");
         let outside = unique_test_dir("script-edit-outside");
-        let path = outside.join("common/decisions/CHI_decisions.txt");
-        write_file(&path, "CHI_category = {\n}\n");
+        let path = outside.join("common/decisions/sample_decisions.txt");
+        write_file(&path, "sample_category = {\n}\n");
 
         let error = edit_hoi4_script_file(EditHoi4ScriptFileRequest {
             path: path.to_string_lossy().to_string(),
             workspace_root: Some(workspace.to_string_lossy().to_string()),
             operation: ScriptEditOperation::InsertIntoBlock {
-                parent_block: "CHI_category".to_string(),
-                content: "CHI_decision = { available = { always = yes } }".to_string(),
+                parent_block: "sample_category".to_string(),
+                content: "sample_decision = { available = { always = yes } }".to_string(),
                 position: Some("end".to_string()),
             },
             dry_run: true,
@@ -492,18 +518,18 @@ mod tests {
     #[test]
     fn handles_multibyte_utf8_tokens_without_panicking() {
         let root = unique_test_dir("script-edit");
-        let path = root.join("common/scripted_effects/CHI_effects.txt");
+        let path = root.join("common/scripted_effects/sample_effects.txt");
         write_file(
             &path,
-            "effects = {\n\tCHI_effect = { log = \"中文内容\" }\n}\n",
+            "effects = {\n\tsample_effect = { log = \"中文内容\" }\n}\n",
         );
 
         let result = edit_hoi4_script_file(EditHoi4ScriptFileRequest {
             path: path.to_string_lossy().to_string(),
             workspace_root: Some(root.to_string_lossy().to_string()),
             operation: ScriptEditOperation::ReplaceNamedBlock {
-                block_name: "CHI_effect".to_string(),
-                content: "CHI_effect = { log = \"新的中文内容\" }".to_string(),
+                block_name: "sample_effect".to_string(),
+                content: "sample_effect = { log = \"新的中文内容\" }".to_string(),
             },
             dry_run: true,
             format: Some(false),

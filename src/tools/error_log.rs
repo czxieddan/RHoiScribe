@@ -179,13 +179,13 @@ mod tests {
         let path = unique_temp_file();
         fs::write(
             &path,
-            "[00:00:01][error.cpp:1]: Error: unexpected token in common/national_focus/CHI.txt\n[00:00:02][localize.cpp:2]: Failed to read localisation/simp_chinese/CHI_l_simp_chinese.yml\n",
+            "[00:00:01][error.cpp:1]: Error: unexpected token in common/national_focus/sample_focus.txt\n[00:00:02][localize.cpp:2]: Failed to read localisation/simp_chinese/focus_errors_l_simp_chinese.yml\n",
         )
         .expect("log should write");
 
         let result = classify_error_log(ClassifyErrorLogRequest {
             error_log_path: path.to_string_lossy().to_string(),
-            changed_paths: vec!["common/national_focus/CHI.txt".to_string()],
+            changed_paths: vec!["common/national_focus/sample_focus.txt".to_string()],
             limit: Some(2),
         })
         .expect("classification should succeed");
@@ -195,7 +195,7 @@ mod tests {
             category.category == "focus"
                 && category
                     .likely_changed_paths
-                    .contains(&"common/national_focus/CHI.txt".to_string())
+                    .contains(&"common/national_focus/sample_focus.txt".to_string())
         }));
         assert!(
             result

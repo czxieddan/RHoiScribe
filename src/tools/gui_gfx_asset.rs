@@ -791,7 +791,7 @@ mod tests {
     fn refuses_generation_without_approval() {
         let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
             output_root: None,
-            asset_name: "CHI_panel".to_string(),
+            asset_name: "sample_panel".to_string(),
             sprite_name: None,
             gui_name: None,
             width: 96,
@@ -824,9 +824,9 @@ mod tests {
     fn approved_dry_run_returns_png_svg_gfx_and_gui() {
         let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
             output_root: None,
-            asset_name: "CHI_command_button".to_string(),
-            sprite_name: Some("GFX_CHI_command_button".to_string()),
-            gui_name: Some("CHI_command_button".to_string()),
+            asset_name: "sample_command_button".to_string(),
+            sprite_name: Some("GFX_sample_command_button".to_string()),
+            gui_name: Some("sample_command_button".to_string()),
             width: 128,
             height: 64,
             style: Some("button".to_string()),
@@ -839,7 +839,7 @@ mod tests {
             write_gui: Some(true),
             approved: true,
             dry_run: true,
-            relative_directory: Some("gfx/interface/CHI".to_string()),
+            relative_directory: Some("gfx/interface/sample".to_string()),
         })
         .expect("asset generation should complete");
 
@@ -853,7 +853,7 @@ mod tests {
             .expect("png should be returned");
         assert!(
             png.path
-                .ends_with("gfx/interface/CHI/CHI_command_button.png")
+                .ends_with("gfx/interface/sample/sample_command_button.png")
         );
         assert!(
             png.content_base64
@@ -867,7 +867,7 @@ mod tests {
                     .text_content
                     .as_deref()
                     .unwrap_or("")
-                    .contains("GFX_CHI_command_button")
+                    .contains("GFX_sample_command_button")
         }));
         assert!(result.files.iter().any(|file| {
             file.kind == "gui"
@@ -883,7 +883,7 @@ mod tests {
     fn tiny_asset_size_does_not_panic() {
         let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
             output_root: None,
-            asset_name: "CHI_tiny".to_string(),
+            asset_name: "sample_tiny".to_string(),
             sprite_name: None,
             gui_name: None,
             width: 1,
@@ -915,7 +915,7 @@ mod tests {
         ] {
             let error = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
                 output_root: None,
-                asset_name: "CHI_bad".to_string(),
+                asset_name: "sample_bad".to_string(),
                 sprite_name: None,
                 gui_name: None,
                 width: 64,
@@ -942,7 +942,7 @@ mod tests {
     fn uses_relative_directory_for_svg_source_path_and_png_crc() {
         let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
             output_root: None,
-            asset_name: "CHI_button".to_string(),
+            asset_name: "sample_button".to_string(),
             sprite_name: None,
             gui_name: None,
             width: 32,
@@ -962,7 +962,7 @@ mod tests {
         .expect("asset should render");
 
         assert!(result.files.iter().any(|file| {
-            file.kind == "svg" && file.path == "gfx/interface/custom/source/CHI_button.svg"
+            file.kind == "svg" && file.path == "gfx/interface/custom/source/sample_button.svg"
         }));
         assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
     }
@@ -972,7 +972,7 @@ mod tests {
         let root = unique_test_dir("gui-gfx-asset");
         let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
             output_root: Some(root.to_string_lossy().to_string()),
-            asset_name: "CHI_status_panel".to_string(),
+            asset_name: "sample_status_panel".to_string(),
             sprite_name: None,
             gui_name: None,
             width: 64,
@@ -993,11 +993,11 @@ mod tests {
 
         assert!(result.applied);
         assert!(
-            root.join("gfx/interface/rhoiscribe/CHI_status_panel.png")
+            root.join("gfx/interface/rhoiscribe/sample_status_panel.png")
                 .is_file()
         );
-        assert!(root.join("interface/CHI_status_panel.gfx").is_file());
-        let bytes = fs::read(root.join("gfx/interface/rhoiscribe/CHI_status_panel.png"))
+        assert!(root.join("interface/sample_status_panel.gfx").is_file());
+        let bytes = fs::read(root.join("gfx/interface/rhoiscribe/sample_status_panel.png"))
             .expect("png should read");
         assert!(bytes.starts_with(&[0x89, b'P', b'N', b'G']));
 

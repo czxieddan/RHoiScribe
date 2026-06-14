@@ -175,28 +175,48 @@ impl PromptCatalog {
             .ok_or_else(|| PromptRenderError::UnknownPrompt(prompt_name.to_string()))?;
 
         let request = required_string_argument(prompt, arguments, "request")?;
-        let optional_arguments = prompt
-            .arguments
-            .iter()
-            .filter(|argument| !argument.required)
-            .filter_map(|argument| {
-                string_argument(arguments, argument.name)
-                    .map(|value| format!("- {}: {}", argument.name, value))
-            })
-            .collect::<Vec<_>>();
+        let optional_context = optional_context(prompt, arguments);
 
-        let optional_context = if optional_arguments.is_empty() {
-            "- none".to_string()
-        } else {
-            optional_arguments.join("\n")
-        };
+        let text = render_prompt_text(prompt.mode, request, &optional_context);
 
-        let text = format!(
-            "You are RHoiScribe, a local HOI4 Modding MCP assistant.\n\
+        Ok(
+            GetPromptResult::new(vec![PromptMessage::new_text(PromptMessageRole::User, text)])
+                .with_description(prompt.description),
+        )
+    }
+}
+
+fn optional_context(prompt: &PromptTemplate, arguments: &Map<String, Value>) -> String {
+    let optional_arguments = prompt
+        .arguments
+        .iter()
+        .filter(|argument| !argument.required)
+        .filter_map(|argument| {
+            string_argument(arguments, argument.name)
+                .map(|value| format!("- {}: {}", argument.name, value))
+        })
+        .collect::<Vec<_>>();
+
+    if optional_arguments.is_empty() {
+        "- none".to_string()
+    } else {
+        optional_arguments.join("\n")
+    }
+}
+
+fn render_prompt_text(mode: &str, request: &str, optional_context: &str) -> String {
+    format!(
+        "You are RHoiScribe, a local HOI4 Modding MCP assistant.\n\
              Mode: {mode}\n\
              User request: {request}\n\
              Optional context:\n{optional_context}\n\
-             Constraints:\n\
+             Constraints:\n{constraints}",
+        mode = mode,
+        constraints = PROMPT_CONSTRAINTS,
+    )
+}
+
+const PROMPT_CONSTRAINTS: &str = "\
              - Start by translating the user's goal into a verifiable checklist covering requested outcomes, affected files, unique IDs, expected game-readable output, and validation evidence.\n\
              - Use RED/GREEN/VERIFY for tool or content changes: RED means define or run the check that would fail before the change when feasible; GREEN means create the smallest complete game-readable change; VERIFY means rerun fresh checks and inspect generated output before saying the task is complete.\n\
              - Do not claim completion, safety, or compatibility without fresh verification evidence from the current workspace or from the generated dry-run output.\n\
@@ -208,7 +228,7 @@ impl PromptCatalog {
              - Prefer edit_hoi4_script_file for targeted changes to existing HOI4 txt/gui/gfx/lua files instead of regenerating whole files.\n\
              - Use repair_hoi4_project with dry_run=true before applying encoding, formatting, or audio fixes. If ffmpeg is required and missing, ask for user approval; only then allow dry_run=false with install_ffmpeg=true for a silent installation attempt.\n\
              - Treat generate_gui_gfx_asset as experimental. Use existing project art first unless the user approves new procedural assets; only pass approved=true after that approval, and do not use external image generation models.\n\
-             - Do not force flat localisation paths. Nested paths such as localisation/simp_chinese/common/autonomy/CHI_l_simp_chinese.yml are valid when they match the workspace convention or user request.\n\
+             - Do not force flat localisation paths. Nested paths such as localisation/simp_chinese/common/autonomy/custom_autonomy_l_simp_chinese.yml are valid when they match the workspace convention or user request; the language suffix is the normal filename convention, not a TAG naming rule.\n\
              - Keep workspace file names, folder names, script token fields, idea IDs, focus IDs, event IDs, variable names, flag names, OOB division names, and similar identifiers ASCII-only. Localisation prose and visible player text may use the target language.\n\
              - Keep speaking in the user's initial conversation language. When adding code comments, write clear English comments with no filler.\n\
              - Deliver complete usable content, not skeleton files, TODO placeholders, draft-only text, or follow-up stubs. Do not leave temporary scripts or unrelated generated files behind.\n\
@@ -220,16 +240,7 @@ impl PromptCatalog {
              - When investigating crashes or load failures, classify error.log first, correlate entries with changed paths, and use git only for analysis unless the user explicitly permits changes.\n\
              - If no workspace convention is visible, say so and fall back to HOI4-readable defaults.\n\
              - Surface assumptions before generating files.\n\
-             - Use the local RHoiScribe knowledge resources before web search.",
-            mode = prompt.mode,
-        );
-
-        Ok(
-            GetPromptResult::new(vec![PromptMessage::new_text(PromptMessageRole::User, text)])
-                .with_description(prompt.description),
-        )
-    }
-}
+             - Use the local RHoiScribe knowledge resources before web search.";
 
 impl PromptTemplate {
     fn as_mcp_prompt(&self) -> Prompt {

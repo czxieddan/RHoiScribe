@@ -49,7 +49,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec {
         name: "generate_localisation_batch",
         title: "Generate localisation batch",
-        description: "Generate a HOI4 localisation yml file, using UTF-8 BOM when writing. file_stem may include subdirectories or a complete mod-relative localisation path.",
+        description: "Generate a HOI4 localisation yml file with UTF-8 BOM. file_stem may include nested subdirectories or a mod-relative localisation/<language>/ path; filenames are normalized to the usual _l_<language>.yml suffix.",
         required: &["language", "file_stem", "entries", "dry_run"],
         handler: call_generate_localisation_batch,
     },
@@ -819,48 +819,206 @@ fn localised_key(prefix: &Option<String>, id: &str) -> String {
 }
 
 fn format_paradox_script(script: &str) -> String {
-    let prepared = script
-        .replace('{', " { ")
-        .replace('}', " } ")
-        .replace('=', " = ");
-    let tokens = prepared.split_whitespace().collect::<Vec<_>>();
+    let tokens = format_tokens(script);
     let mut lines = Vec::new();
     let mut indent = 0usize;
-    let mut index = 0usize;
+    let mut current = Vec::new();
 
-    while index < tokens.len() {
-        match tokens[index] {
-            "}" => {
-                indent = indent.saturating_sub(1);
-                lines.push(format!("{}}}", "\t".repeat(indent)));
-                index += 1;
-            }
-            token if index + 2 < tokens.len() && tokens[index + 1] == "=" => {
-                if tokens[index + 2] == "{" {
-                    lines.push(format!("{}{} = {{", "\t".repeat(indent), token));
-                    indent += 1;
-                    index += 3;
-                } else {
-                    lines.push(format!(
-                        "{}{} = {}",
-                        "\t".repeat(indent),
-                        token,
-                        tokens[index + 2]
-                    ));
-                    index += 3;
-                }
-            }
-            "{" => {
-                lines.push(format!("{}{{", "\t".repeat(indent)));
-                indent += 1;
-                index += 1;
-            }
-            token => {
-                lines.push(format!("{}{}", "\t".repeat(indent), token));
-                index += 1;
-            }
+    for token in tokens {
+        apply_format_token(token, &mut lines, &mut indent, &mut current);
+    }
+
+    flush_format_line(&mut lines, indent, &mut current);
+    lines.join("\n") + "\n"
+}
+
+fn apply_format_token(
+    token: FormatToken,
+    lines: &mut Vec<String>,
+    indent: &mut usize,
+    current: &mut Vec<String>,
+) {
+    match token {
+        FormatToken::Word(text) | FormatToken::Quoted(text) => {
+            push_format_value(lines, *indent, current, text)
+        }
+        FormatToken::Equals => current.push("=".to_string()),
+        FormatToken::Open => open_format_block(lines, indent, current),
+        FormatToken::Close => close_format_block(lines, indent, current),
+        FormatToken::Comment(text) => finish_comment_line(lines, *indent, current, text),
+        FormatToken::Newline => flush_format_line(lines, *indent, current),
+    }
+}
+
+fn push_format_value(
+    lines: &mut Vec<String>,
+    indent: usize,
+    current: &mut Vec<String>,
+    text: String,
+) {
+    flush_completed_assignment(lines, indent, current);
+    current.push(text);
+}
+
+fn open_format_block(lines: &mut Vec<String>, indent: &mut usize, current: &mut Vec<String>) {
+    current.push("{".to_string());
+    flush_format_line(lines, *indent, current);
+    *indent += 1;
+}
+
+fn close_format_block(lines: &mut Vec<String>, indent: &mut usize, current: &mut Vec<String>) {
+    flush_format_line(lines, *indent, current);
+    *indent = indent.saturating_sub(1);
+    lines.push(format!("{}}}", "\t".repeat(*indent)));
+}
+
+fn finish_comment_line(
+    lines: &mut Vec<String>,
+    indent: usize,
+    current: &mut Vec<String>,
+    text: String,
+) {
+    current.push(text);
+    flush_format_line(lines, indent, current);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FormatToken {
+    Word(String),
+    Quoted(String),
+    Equals,
+    Open,
+    Close,
+    Comment(String),
+    Newline,
+}
+
+fn format_tokens(script: &str) -> Vec<FormatToken> {
+    let mut chars = script.chars().peekable();
+    let mut tokens = Vec::new();
+
+    while let Some(character) = chars.next() {
+        if let Some(token) = next_format_token(character, &mut chars) {
+            tokens.push(token);
         }
     }
 
-    lines.join("\n") + "\n"
+    tokens
+}
+
+fn next_format_token<I>(character: char, chars: &mut std::iter::Peekable<I>) -> Option<FormatToken>
+where
+    I: Iterator<Item = char>,
+{
+    if character.is_whitespace() {
+        return whitespace_format_token(character);
+    }
+
+    structural_format_token(character)
+        .or_else(|| quoted_format_token(character, chars))
+        .or_else(|| comment_format_token(character, chars))
+        .or_else(|| Some(FormatToken::Word(read_format_word(character, chars))))
+}
+
+fn whitespace_format_token(character: char) -> Option<FormatToken> {
+    (character == '\n').then_some(FormatToken::Newline)
+}
+
+fn structural_format_token(character: char) -> Option<FormatToken> {
+    match character {
+        '=' => Some(FormatToken::Equals),
+        '{' => Some(FormatToken::Open),
+        '}' => Some(FormatToken::Close),
+        _ => None,
+    }
+}
+
+fn quoted_format_token<I>(
+    character: char,
+    chars: &mut std::iter::Peekable<I>,
+) -> Option<FormatToken>
+where
+    I: Iterator<Item = char>,
+{
+    (character == '"').then(|| FormatToken::Quoted(read_format_string(chars)))
+}
+
+fn comment_format_token<I>(
+    character: char,
+    chars: &mut std::iter::Peekable<I>,
+) -> Option<FormatToken>
+where
+    I: Iterator<Item = char>,
+{
+    (character == '#').then(|| FormatToken::Comment(read_format_comment(chars)))
+}
+
+fn read_format_string<I>(chars: &mut std::iter::Peekable<I>) -> String
+where
+    I: Iterator<Item = char>,
+{
+    let mut value = String::from("\"");
+    let mut escaped = false;
+
+    for character in chars.by_ref() {
+        value.push(character);
+        if escaped {
+            escaped = false;
+        } else if character == '\\' {
+            escaped = true;
+        } else if character == '"' {
+            break;
+        }
+    }
+
+    value
+}
+
+fn read_format_comment<I>(chars: &mut std::iter::Peekable<I>) -> String
+where
+    I: Iterator<Item = char>,
+{
+    let mut value = String::from("#");
+
+    while let Some(character) = chars.peek().copied() {
+        if character == '\n' {
+            break;
+        }
+        chars.next();
+        value.push(character);
+    }
+
+    value.trim_end().to_string()
+}
+
+fn read_format_word<I>(first: char, chars: &mut std::iter::Peekable<I>) -> String
+where
+    I: Iterator<Item = char>,
+{
+    let mut value = String::from(first);
+
+    while let Some(character) = chars.peek().copied() {
+        if character.is_whitespace() || matches!(character, '=' | '{' | '}' | '"' | '#') {
+            break;
+        }
+        chars.next();
+        value.push(character);
+    }
+
+    value
+}
+
+fn flush_completed_assignment(lines: &mut Vec<String>, indent: usize, current: &mut Vec<String>) {
+    if current.len() >= 3 && current.get(1).is_some_and(|token| token == "=") {
+        flush_format_line(lines, indent, current);
+    }
+}
+
+fn flush_format_line(lines: &mut Vec<String>, indent: usize, current: &mut Vec<String>) {
+    if current.is_empty() {
+        return;
+    }
+
+    lines.push(format!("{}{}", "\t".repeat(indent), current.join(" ")));
+    current.clear();
 }

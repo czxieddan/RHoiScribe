@@ -507,31 +507,39 @@ fn scan_root_for_hoi4(root: PathBuf, stop: Arc<AtomicBool>) -> Option<PathBuf> {
             return None;
         }
 
-        if path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.eq_ignore_ascii_case(HOI4_FOLDER_NAME))
-            && is_valid_game_path(&path)
-        {
+        if is_hoi4_install_candidate(&path) {
             stop.store(true, Ordering::Relaxed);
             return Some(path);
         }
 
-        let Ok(entries) = fs::read_dir(&path) else {
-            continue;
-        };
-
-        for entry in entries.flatten() {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if file_type.is_dir() && should_scan_descend(&entry.path()) {
-                pending.push(entry.path());
-            }
-        }
+        pending.extend(scan_child_directories(&path));
     }
 
     None
+}
+
+fn is_hoi4_install_candidate(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case(HOI4_FOLDER_NAME))
+        && is_valid_game_path(path)
+}
+
+fn scan_child_directories(path: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(path) else {
+        return Vec::new();
+    };
+
+    entries.flatten().filter_map(scan_child_directory).collect()
+}
+
+fn scan_child_directory(entry: fs::DirEntry) -> Option<PathBuf> {
+    entry
+        .file_type()
+        .ok()
+        .filter(|file_type| file_type.is_dir())?;
+    let path = entry.path();
+    should_scan_descend(&path).then_some(path)
 }
 
 fn should_scan_descend(path: &Path) -> bool {

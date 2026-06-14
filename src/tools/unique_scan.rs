@@ -542,8 +542,8 @@ fn scan_decision_definition(
         return;
     }
 
-    match stack_depth {
-        0 if has_candidate(candidate_lookup, "decision_category", key) => push_match(
+    if decision_category_match(stack_depth, key, candidate_lookup) {
+        push_match(
             file,
             output,
             "decision_category",
@@ -551,22 +551,38 @@ fn scan_decision_definition(
             "decision_category",
             line,
             "top-level decision category",
-        ),
-        1 if !is_ignored_decision_block(key)
-            && has_candidate(candidate_lookup, "decision", key) =>
-        {
-            push_match(
-                file,
-                output,
-                "decision",
-                key,
-                "decision",
-                line,
-                "decision block inside category",
-            );
-        }
-        _ => {}
+        );
     }
+
+    if decision_match(stack_depth, key, candidate_lookup) {
+        push_match(
+            file,
+            output,
+            "decision",
+            key,
+            "decision",
+            line,
+            "decision block inside category",
+        );
+    }
+}
+
+fn decision_category_match(
+    stack_depth: usize,
+    key: &str,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+) -> bool {
+    stack_depth == 0 && has_candidate(candidate_lookup, "decision_category", key)
+}
+
+fn decision_match(
+    stack_depth: usize,
+    key: &str,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+) -> bool {
+    stack_depth == 1
+        && !is_ignored_decision_block(key)
+        && has_candidate(candidate_lookup, "decision", key)
 }
 
 fn scan_replace_path(
@@ -631,17 +647,37 @@ fn scan_id_assignment(
 }
 
 fn id_assignment_kind(block: Option<&str>) -> Option<(&'static str, &'static str, &'static str)> {
-    match block {
-        Some("focus") => Some(("focus_id", "focus", "id inside focus-like block")),
-        Some("shared_focus") => Some(("focus_id", "shared_focus", "id inside focus-like block")),
-        Some("joint_focus") => Some(("focus_id", "joint_focus", "id inside focus-like block")),
-        Some("focus_tree") => Some(("focus_tree_id", "focus_tree", "id inside focus_tree block")),
-        Some("country_event") => Some(("event_id", "country_event", "event id")),
-        Some("news_event") => Some(("event_id", "news_event", "event id")),
-        Some("state_event") => Some(("event_id", "state_event", "event id")),
-        Some("unit_event") => Some(("event_id", "unit_event", "event id")),
-        _ => None,
-    }
+    const ID_ASSIGNMENTS: &[(&str, &str, &str, &str)] = &[
+        ("focus", "focus_id", "focus", "id inside focus-like block"),
+        (
+            "shared_focus",
+            "focus_id",
+            "shared_focus",
+            "id inside focus-like block",
+        ),
+        (
+            "joint_focus",
+            "focus_id",
+            "joint_focus",
+            "id inside focus-like block",
+        ),
+        (
+            "focus_tree",
+            "focus_tree_id",
+            "focus_tree",
+            "id inside focus_tree block",
+        ),
+        ("country_event", "event_id", "country_event", "event id"),
+        ("news_event", "event_id", "news_event", "event id"),
+        ("state_event", "event_id", "state_event", "event id"),
+        ("unit_event", "event_id", "unit_event", "event id"),
+    ];
+
+    let block = block?;
+    ID_ASSIGNMENTS
+        .iter()
+        .find(|(candidate, _, _, _)| *candidate == block)
+        .map(|(_, entity_type, kind, context)| (*entity_type, *kind, *context))
 }
 
 fn scan_reusable_focus_reference(
@@ -765,21 +801,22 @@ fn scan_variable_assignment(
         push_match(file, output, "variable", value, key, line, "variable usage");
     }
 
-    if let Some(block) = current_block.filter(|block| is_variable_key(block)) {
-        let variable_name = if key == "var" { value } else { key };
-        if (key == "var" || has_candidate(candidate_lookup, "variable", key))
-            && has_candidate(candidate_lookup, "variable", variable_name)
-        {
-            push_match(
-                file,
-                output,
-                "variable",
-                variable_name,
-                block,
-                line,
-                "variable field",
-            );
-        }
+    let Some(block) = current_block.filter(|block| is_variable_key(block)) else {
+        return;
+    };
+    let Some(variable_name) = variable_name_from_field(key, value, candidate_lookup) else {
+        return;
+    };
+    if has_candidate(candidate_lookup, "variable", variable_name) {
+        push_match(
+            file,
+            output,
+            "variable",
+            variable_name,
+            block,
+            line,
+            "variable field",
+        );
     }
 }
 
@@ -815,12 +852,18 @@ fn scan_localisation_keys(
     }
 
     for (line_index, line) in content.lines().enumerate() {
-        let trimmed = line.trim_start();
+        let trimmed = line.trim_start().trim_start_matches('\u{feff}');
         let Some((key, rest)) = trimmed.split_once(':') else {
             continue;
         };
 
-        if rest.starts_with('0') && has_candidate(candidate_lookup, "localisation_key", key) {
+        let key = key.trim();
+        let rest = rest.trim();
+        if key.is_empty() || is_localisation_language_header(key, rest) {
+            continue;
+        }
+
+        if has_candidate(candidate_lookup, "localisation_key", key) {
             push_match(
                 file,
                 output,
@@ -1069,6 +1112,21 @@ fn is_variable_key(key: &str) -> bool {
             | "has_variable"
             | "clear_variable"
     )
+}
+
+fn variable_name_from_field<'a>(
+    key: &'a str,
+    value: &'a str,
+    candidate_lookup: &HashMap<String, HashSet<String>>,
+) -> Option<&'a str> {
+    if key == "var" {
+        return Some(value);
+    }
+    has_candidate(candidate_lookup, "variable", key).then_some(key)
+}
+
+fn is_localisation_language_header(key: &str, rest: &str) -> bool {
+    key.starts_with("l_") && (rest.is_empty() || rest.starts_with('#'))
 }
 
 fn is_ignored_idea_block(key: &str) -> bool {

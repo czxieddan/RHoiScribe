@@ -217,33 +217,15 @@ fn scan_block_definition(
     let path = file.relative_path.as_str();
     let parent = stack.last().map(String::as_str);
 
-    if path.starts_with("common/scripted_triggers/") && stack.is_empty() {
-        push_definition(
-            file,
-            output,
-            "scripted_trigger",
-            key,
-            line,
-            "top-level scripted trigger",
-        );
+    if let Some((kind, context)) = top_level_scripted_kind(path, stack.is_empty()) {
+        push_definition(file, output, kind, key, line, context);
     }
 
-    if path.starts_with("common/scripted_effects/") && stack.is_empty() {
-        push_definition(
-            file,
-            output,
-            "scripted_effect",
-            key,
-            line,
-            "top-level scripted effect",
-        );
-    }
-
-    if path.starts_with("common/ideas/") && !is_ignored_idea_block(key) {
+    if idea_token_definition(path, key) {
         push_definition(file, output, "idea_token", key, line, "idea token block");
     }
 
-    if path.starts_with("common/dynamic_modifiers/") || parent == Some("dynamic_modifier") {
+    if dynamic_modifier_definition(path, parent) {
         push_definition(
             file,
             output,
@@ -253,6 +235,27 @@ fn scan_block_definition(
             "dynamic modifier block",
         );
     }
+}
+
+fn top_level_scripted_kind(path: &str, is_top_level: bool) -> Option<(&'static str, &'static str)> {
+    if !is_top_level {
+        return None;
+    }
+    if path.starts_with("common/scripted_triggers/") {
+        Some(("scripted_trigger", "top-level scripted trigger"))
+    } else if path.starts_with("common/scripted_effects/") {
+        Some(("scripted_effect", "top-level scripted effect"))
+    } else {
+        None
+    }
+}
+
+fn idea_token_definition(path: &str, key: &str) -> bool {
+    path.starts_with("common/ideas/") && !is_ignored_idea_block(key)
+}
+
+fn dynamic_modifier_definition(path: &str, parent: Option<&str>) -> bool {
+    path.starts_with("common/dynamic_modifiers/") || parent == Some("dynamic_modifier")
 }
 
 fn scan_assignment(
@@ -280,39 +283,52 @@ fn scan_asset_assignment(
     current_block: Option<&str>,
     output: &mut WorkerOutput,
 ) {
-    if key == "name" && current_block == Some("spriteType") {
-        push_definition(file, output, "gfx_sprite", value, line, "spriteType name");
+    if let Some((kind, context)) = asset_definition_kind(file, key, current_block) {
+        push_definition(file, output, kind, value, line, context);
     }
 
-    if key == "name"
-        && file.relative_path.starts_with("interface/")
-        && let Some(block) = current_block
-        && matches!(
-            block,
-            "containerWindowType"
-                | "buttonType"
-                | "iconType"
-                | "instantTextBoxType"
-                | "listboxType"
-        )
-    {
-        push_definition(file, output, "gui_element", value, line, block);
+    if let Some((kind, context)) = asset_reference_kind(key, current_block) {
+        push_reference(file, output, kind, value, line, context);
     }
+}
 
-    if key == "texturefile" && current_block == Some("spriteType") {
-        push_reference(
-            file,
-            output,
-            "asset_texture",
-            value,
-            line,
-            "sprite texturefile",
-        );
+fn asset_definition_kind<'a>(
+    file: &ScanFile,
+    key: &str,
+    current_block: Option<&'a str>,
+) -> Option<(&'static str, &'a str)> {
+    if key != "name" {
+        return None;
     }
+    match current_block {
+        Some("spriteType") => Some(("gfx_sprite", "spriteType name")),
+        Some(block)
+            if is_gui_element_block(block) && file.relative_path.starts_with("interface/") =>
+        {
+            Some(("gui_element", block))
+        }
+        _ => None,
+    }
+}
 
-    if key == "quadTextureSprite" || key == "spriteType" {
-        push_reference(file, output, "gfx_sprite", value, line, key);
+fn asset_reference_kind<'a>(
+    key: &'a str,
+    current_block: Option<&str>,
+) -> Option<(&'static str, &'a str)> {
+    match key {
+        "texturefile" if current_block == Some("spriteType") => {
+            Some(("asset_texture", "sprite texturefile"))
+        }
+        "quadTextureSprite" | "spriteType" => Some(("gfx_sprite", key)),
+        _ => None,
     }
+}
+
+fn is_gui_element_block(block: &str) -> bool {
+    matches!(
+        block,
+        "containerWindowType" | "buttonType" | "iconType" | "instantTextBoxType" | "listboxType"
+    )
 }
 
 fn scan_flag_assignment(
@@ -368,19 +384,8 @@ fn scan_focus_event_assignment(
     current_block: Option<&str>,
     output: &mut WorkerOutput,
 ) {
-    if key == "id" {
-        match current_block {
-            Some("focus") | Some("shared_focus") | Some("joint_focus") => {
-                push_definition(file, output, "focus_id", value, line, "focus id");
-            }
-            Some("focus_tree") => {
-                push_definition(file, output, "focus_tree_id", value, line, "focus tree id")
-            }
-            Some("country_event" | "news_event" | "state_event" | "unit_event") => {
-                push_definition(file, output, "event_id", value, line, "event id");
-            }
-            _ => {}
-        }
+    if let Some((kind, context)) = id_definition_kind(key, current_block) {
+        push_definition(file, output, kind, value, line, context);
     }
 
     if matches!(key, "shared_focus" | "joint_focus") {
@@ -396,6 +401,23 @@ fn scan_focus_event_assignment(
             line,
             "event namespace",
         );
+    }
+}
+
+fn id_definition_kind(
+    key: &str,
+    current_block: Option<&str>,
+) -> Option<(&'static str, &'static str)> {
+    if key != "id" {
+        return None;
+    }
+    match current_block {
+        Some("focus" | "shared_focus" | "joint_focus") => Some(("focus_id", "focus id")),
+        Some("focus_tree") => Some(("focus_tree_id", "focus tree id")),
+        Some("country_event" | "news_event" | "state_event" | "unit_event") => {
+            Some(("event_id", "event id"))
+        }
+        _ => None,
     }
 }
 
@@ -691,7 +713,7 @@ fn is_ignored_idea_block(key: &str) -> bool {
 mod tests {
     use std::fs;
 
-    use super::{ProjectIndexRequest, index_hoi4_project};
+    use super::{ProjectIndexItem, ProjectIndexRequest, index_hoi4_project};
     use crate::tools::{ScanRoot, test_support::unique_test_dir};
 
     #[test]
@@ -699,28 +721,28 @@ mod tests {
         let root = unique_test_dir("project-index");
         write_file(
             &root,
-            "common/scripted_triggers/CHI_triggers.txt",
-            "CHI_has_system_ready = { has_country_flag = CHI_system_ready check_variable = { CHI_score > 0 } }\n",
+            "common/scripted_triggers/sample_triggers.txt",
+            "sample_has_system_ready = { has_country_flag = sample_system_ready check_variable = { sample_score > 0 } }\n",
         );
         write_file(
             &root,
-            "common/scripted_effects/CHI_effects.txt",
-            "CHI_apply_system = { set_country_flag = CHI_system_ready set_variable = { CHI_score = 1 } }\n",
+            "common/scripted_effects/sample_effects.txt",
+            "sample_apply_system = { set_country_flag = sample_system_ready set_variable = { sample_score = 1 } }\n",
         );
         write_file(
             &root,
-            "interface/CHI_interface.gfx",
-            "spriteTypes = { spriteType = { name = \"GFX_CHI_panel\" texturefile = \"gfx/interface/CHI/panel.png\" } }\n",
+            "interface/sample_interface.gfx",
+            "spriteTypes = { spriteType = { name = \"GFX_sample_panel\" texturefile = \"gfx/interface/sample/panel.png\" } }\n",
         );
         write_file(
             &root,
-            "interface/CHI_interface.gui",
-            "guiTypes = { containerWindowType = { name = \"CHI_panel_window\" background = { quadTextureSprite = \"GFX_CHI_panel\" } } }\n",
+            "interface/sample_interface.gui",
+            "guiTypes = { containerWindowType = { name = \"sample_panel_window\" background = { quadTextureSprite = \"GFX_sample_panel\" } } }\n",
         );
         write_file(
             &root,
-            "localisation/simp_chinese/CHI_l_simp_chinese.yml",
-            "\u{feff}l_simp_chinese:\n CHI_system_ready:0 \"系统\"\n",
+            "localisation/simp_chinese/project_index_l_simp_chinese.yml",
+            "\u{feff}l_simp_chinese:\n sample_system_ready:0 \"系统\"\n",
         );
 
         let index = index_hoi4_project(ProjectIndexRequest {
@@ -734,48 +756,17 @@ mod tests {
 
         assert_eq!(index.scanned_roots, 1);
         assert!(index.scanned_files >= 5);
-        assert!(
-            index
-                .definitions
-                .iter()
-                .any(|item| item.kind == "scripted_trigger" && item.name == "CHI_has_system_ready")
+        assert_index_item(
+            &index.definitions,
+            "scripted_trigger",
+            "sample_has_system_ready",
         );
-        assert!(
-            index
-                .definitions
-                .iter()
-                .any(|item| item.kind == "scripted_effect" && item.name == "CHI_apply_system")
-        );
-        assert!(
-            index
-                .definitions
-                .iter()
-                .any(|item| item.kind == "gfx_sprite" && item.name == "GFX_CHI_panel")
-        );
-        assert!(
-            index
-                .definitions
-                .iter()
-                .any(|item| item.kind == "gui_element" && item.name == "CHI_panel_window")
-        );
-        assert!(
-            index
-                .references
-                .iter()
-                .any(|item| item.kind == "country_flag" && item.name == "CHI_system_ready")
-        );
-        assert!(
-            index
-                .references
-                .iter()
-                .any(|item| item.kind == "variable" && item.name == "CHI_score")
-        );
-        assert!(
-            index
-                .references
-                .iter()
-                .any(|item| item.kind == "gfx_sprite" && item.name == "GFX_CHI_panel")
-        );
+        assert_index_item(&index.definitions, "scripted_effect", "sample_apply_system");
+        assert_index_item(&index.definitions, "gfx_sprite", "GFX_sample_panel");
+        assert_index_item(&index.definitions, "gui_element", "sample_panel_window");
+        assert_index_item(&index.references, "country_flag", "sample_system_ready");
+        assert_index_item(&index.references, "variable", "sample_score");
+        assert_index_item(&index.references, "gfx_sprite", "GFX_sample_panel");
 
         fs::remove_dir_all(root).expect("temp output should clean up");
     }
@@ -786,5 +777,13 @@ mod tests {
             fs::create_dir_all(parent).expect("fixture parent should be created");
         }
         fs::write(path, content).expect("fixture file should be written");
+    }
+
+    fn assert_index_item(items: &[ProjectIndexItem], kind: &str, name: &str) {
+        assert!(
+            items
+                .iter()
+                .any(|item| item.kind == kind && item.name == name)
+        );
     }
 }

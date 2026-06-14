@@ -886,8 +886,8 @@ mod tests {
     use std::fs;
 
     use super::{
-        RepairHoi4ProjectRequest, detect_ffmpeg_with_installer, ffprobe_command,
-        repair_hoi4_project,
+        RepairCheck, RepairHoi4ProjectRequest, RepairHoi4ProjectResult,
+        detect_ffmpeg_with_installer, ffprobe_command, repair_hoi4_project,
     };
     use crate::tools::{ScanRoot, test_support::unique_test_dir};
 
@@ -896,12 +896,12 @@ mod tests {
         let root = unique_test_dir("project-repair");
         write_bytes(
             &root,
-            "localisation/simp_chinese/CHI_l_simp_chinese.yml",
-            b"l_simp_chinese:\n CHI_key:0 \"text\"\n",
+            "localisation/simp_chinese/repair_fixture_l_simp_chinese.yml",
+            b"l_simp_chinese:\n sample_key:0 \"text\"\n",
         );
         write_bytes(
             &root,
-            "common/national_focus/CHI.txt",
+            "common/national_focus/sample_focus.txt",
             &[0xEF, 0xBB, 0xBF, b'f', b'o', b'c', b'u', b's'],
         );
         write_bytes(&root, "sound/effect.ogg", b"not real audio");
@@ -928,37 +928,13 @@ mod tests {
         assert!(result.dry_run);
         assert!(!result.applied);
         assert!(!result.ffmpeg.available);
+        assert_repair_check(&result.checks, "localisation_bom", "yellow");
+        assert_repair_check(&result.checks, "script_no_bom", "yellow");
+        assert_repair_check(&result.checks, "sound_wav_only", "red");
+        assert_repair_check(&result.checks, "music_ogg_probe", "yellow");
+        assert_change_planned(&result, "add_utf8_bom");
         assert!(
-            result
-                .checks
-                .iter()
-                .any(|check| check.id == "localisation_bom"
-                    && check.status == "yellow"
-                    && check.path.ends_with("CHI_l_simp_chinese.yml"))
-        );
-        assert!(result.checks.iter().any(|check| check.id == "script_no_bom"
-            && check.status == "yellow"
-            && check.path == "common/national_focus/CHI.txt"));
-        assert!(
-            result
-                .checks
-                .iter()
-                .any(|check| check.id == "sound_wav_only" && check.status == "red")
-        );
-        assert!(
-            result
-                .checks
-                .iter()
-                .any(|check| check.id == "music_ogg_probe" && check.status == "yellow")
-        );
-        assert!(
-            result
-                .changes
-                .iter()
-                .any(|change| change.action == "add_utf8_bom" && !change.applied)
-        );
-        assert!(
-            !fs::read(root.join("localisation/simp_chinese/CHI_l_simp_chinese.yml"))
+            !fs::read(root.join("localisation/simp_chinese/repair_fixture_l_simp_chinese.yml"))
                 .expect("localisation should remain readable")
                 .starts_with(&[0xEF, 0xBB, 0xBF])
         );
@@ -971,8 +947,8 @@ mod tests {
         let root = unique_test_dir("project-repair");
         write_bytes(
             &root,
-            "localisation/english/CHI_l_english.yml",
-            b"l_english:\n CHI_key:0 \"Text\"\n",
+            "localisation/english/repair_fixture_l_english.yml",
+            b"l_english:\n sample_key:0 \"Text\"\n",
         );
         write_bytes(
             &root,
@@ -981,12 +957,8 @@ mod tests {
         );
         write_bytes(
             &root,
-            "common/scripted_effects/CHI_effects.txt",
-            &[
-                0xEF, 0xBB, 0xBF, b'C', b'H', b'I', b'_', b'e', b'f', b'f', b'e', b'c', b't', b'=',
-                b'{', b'a', b'd', b'd', b'_', b'p', b'o', b'l', b'i', b't', b'i', b'c', b'a', b'l',
-                b'_', b'p', b'o', b'w', b'e', b'r', b'=', b'1', b'}',
-            ],
+            "common/scripted_effects/sample_effects.txt",
+            b"\xEF\xBB\xBFsample_effect={add_political_power=1}",
         );
 
         let result = repair_hoi4_project(RepairHoi4ProjectRequest {
@@ -1005,7 +977,7 @@ mod tests {
 
         assert!(result.applied);
         assert!(
-            fs::read(root.join("localisation/english/CHI_l_english.yml"))
+            fs::read(root.join("localisation/english/repair_fixture_l_english.yml"))
                 .expect("localisation should read")
                 .starts_with(&[0xEF, 0xBB, 0xBF])
         );
@@ -1014,10 +986,10 @@ mod tests {
                 .expect("credits should read")
                 .starts_with(&[0xEF, 0xBB, 0xBF])
         );
-        let script = fs::read(root.join("common/scripted_effects/CHI_effects.txt"))
+        let script = fs::read(root.join("common/scripted_effects/sample_effects.txt"))
             .expect("script should read");
         assert!(!script.starts_with(&[0xEF, 0xBB, 0xBF]));
-        assert!(String::from_utf8_lossy(&script).contains("CHI_effect = {"));
+        assert!(String::from_utf8_lossy(&script).contains("sample_effect = {"));
 
         fs::remove_dir_all(root).expect("temp output should clean up");
     }
@@ -1026,10 +998,10 @@ mod tests {
     fn format_repair_skips_comments_and_quoted_strings() {
         let root = unique_test_dir("project-repair");
         let original =
-            "CHI_effect={ log=\"hello world\" # keep this comment\n add_political_power=1 }\n";
+            "sample_effect={ log=\"hello world\" # keep this comment\n add_political_power=1 }\n";
         write_bytes(
             &root,
-            "common/scripted_effects/CHI_effects.txt",
+            "common/scripted_effects/sample_effects.txt",
             original.as_bytes(),
         );
 
@@ -1054,7 +1026,7 @@ mod tests {
                 .any(|check| { check.id == "script_format_skipped" && check.status == "yellow" })
         );
         assert_eq!(
-            fs::read_to_string(root.join("common/scripted_effects/CHI_effects.txt"))
+            fs::read_to_string(root.join("common/scripted_effects/sample_effects.txt"))
                 .expect("script should read"),
             original
         );
@@ -1137,5 +1109,22 @@ mod tests {
             fs::create_dir_all(parent).expect("fixture parent should be created");
         }
         fs::write(path, bytes).expect("fixture file should be written");
+    }
+
+    fn assert_repair_check(checks: &[RepairCheck], id: &str, status: &str) {
+        assert!(
+            checks
+                .iter()
+                .any(|check| check.id == id && check.status == status)
+        );
+    }
+
+    fn assert_change_planned(result: &RepairHoi4ProjectResult, action: &str) {
+        assert!(
+            result
+                .changes
+                .iter()
+                .any(|change| change.action == action && !change.applied)
+        );
     }
 }
