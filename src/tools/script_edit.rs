@@ -50,78 +50,115 @@ struct BlockSpan {
     close: usize,
 }
 
+#[derive(Debug, Clone)]
+struct ScriptFile {
+    path: PathBuf,
+    original_bytes: Vec<u8>,
+    text: String,
+}
+
 pub fn edit_hoi4_script_file(
     request: EditHoi4ScriptFileRequest,
 ) -> Result<EditHoi4ScriptFileResult, String> {
-    let path = validate_workspace_script_path(
-        Path::new(&request.path),
-        request.workspace_root.as_deref(),
-    )?;
-    if !path.is_file() {
-        return Err(format!("script file does not exist: {}", request.path));
-    }
-    if !is_supported_script_path(&path) {
-        return Err("only HOI4 txt/gui/gfx/lua script files can be edited".to_string());
-    }
-
-    let bytes =
-        fs::read(&path).map_err(|error| format!("failed to read {}: {}", request.path, error))?;
-    let body = strip_bom(&bytes);
-    let text = String::from_utf8(body.to_vec())
-        .map_err(|error| format!("script file must be valid UTF-8: {}", error))?;
-    ensure_balanced_braces(&text)?;
-
-    let edited = match &request.operation {
-        ScriptEditOperation::ReplaceNamedBlock {
-            block_name,
-            content,
-        } => replace_named_block(&text, block_name, content)?,
-        ScriptEditOperation::InsertIntoBlock {
-            parent_block,
-            content,
-            position,
-        } => insert_into_block(&text, parent_block, content, position.as_deref())?,
-    };
-
-    let formatted = if request.format.unwrap_or(true) {
-        format_paradox_script(&edited)
-    } else {
-        edited
-    };
+    let script = read_script_file(&request.path, request.workspace_root.as_deref())?;
+    let edited = apply_script_operation(&script.text, &request.operation)?;
+    let formatted = maybe_format_script(edited, request.format.unwrap_or(true));
     ensure_balanced_braces(&formatted)?;
 
-    let mut output = Vec::new();
-    if should_have_utf8_bom(&path) {
-        output.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
-    }
-    output.extend_from_slice(formatted.as_bytes());
-    let changed = output != bytes;
+    let output = encode_script_output(&script.path, &formatted);
+    let changed = output != script.original_bytes;
     let applied = changed && !request.dry_run;
 
     if applied {
-        fs::write(&path, &output)
-            .map_err(|error| format!("failed to write {}: {}", request.path, error))?;
+        write_script_output(&script.path, &output, &request.path)?;
     }
 
     Ok(EditHoi4ScriptFileResult {
         dry_run: request.dry_run,
         applied,
         changed,
-        path: path.to_string_lossy().to_string(),
-        encoding: if output.starts_with(&[0xEF, 0xBB, 0xBF]) {
-            "utf-8-bom".to_string()
-        } else {
-            "utf-8".to_string()
-        },
+        path: script.path.to_string_lossy().to_string(),
+        encoding: encoding_name(&output).to_string(),
         preview: String::from_utf8_lossy(strip_bom(&output)).to_string(),
-        messages: vec![if request.dry_run {
-            "Dry-run only; no file was changed.".to_string()
-        } else if changed {
-            "File edited in place. Review the diff before committing.".to_string()
-        } else {
-            "Requested edit produced no content change.".to_string()
-        }],
+        messages: edit_messages(request.dry_run, changed),
     })
+}
+
+fn read_script_file(path: &str, workspace_root: Option<&str>) -> Result<ScriptFile, String> {
+    let path = validate_workspace_script_path(Path::new(path), workspace_root)?;
+    if !path.is_file() {
+        return Err(format!("script file does not exist: {}", path.display()));
+    }
+    if !is_supported_script_path(&path) {
+        return Err("only HOI4 txt/gui/gfx/lua script files can be edited".to_string());
+    }
+
+    let original_bytes =
+        fs::read(&path).map_err(|error| format!("failed to read {}: {}", path.display(), error))?;
+    let text = String::from_utf8(strip_bom(&original_bytes).to_vec())
+        .map_err(|error| format!("script file must be valid UTF-8: {}", error))?;
+    ensure_balanced_braces(&text)?;
+
+    Ok(ScriptFile {
+        path,
+        original_bytes,
+        text,
+    })
+}
+
+fn apply_script_operation(text: &str, operation: &ScriptEditOperation) -> Result<String, String> {
+    match operation {
+        ScriptEditOperation::ReplaceNamedBlock {
+            block_name,
+            content,
+        } => replace_named_block(text, block_name, content),
+        ScriptEditOperation::InsertIntoBlock {
+            parent_block,
+            content,
+            position,
+        } => insert_into_block(text, parent_block, content, position.as_deref()),
+    }
+}
+
+fn maybe_format_script(text: String, should_format: bool) -> String {
+    if should_format {
+        format_paradox_script(&text)
+    } else {
+        text
+    }
+}
+
+fn encode_script_output(path: &Path, text: &str) -> Vec<u8> {
+    let mut output = Vec::new();
+    if should_have_utf8_bom(path) {
+        output.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+    }
+    output.extend_from_slice(text.as_bytes());
+    output
+}
+
+fn write_script_output(path: &Path, output: &[u8], requested_path: &str) -> Result<(), String> {
+    fs::write(path, output)
+        .map_err(|error| format!("failed to write {}: {}", requested_path, error))
+}
+
+fn encoding_name(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        "utf-8-bom"
+    } else {
+        "utf-8"
+    }
+}
+
+fn edit_messages(dry_run: bool, changed: bool) -> Vec<String> {
+    let message = if dry_run {
+        "Dry-run only; no file was changed."
+    } else if changed {
+        "File edited in place. Review the diff before committing."
+    } else {
+        "Requested edit produced no content change."
+    };
+    vec![message.to_string()]
 }
 
 fn replace_named_block(text: &str, block_name: &str, content: &str) -> Result<String, String> {
@@ -157,37 +194,45 @@ fn insert_into_block(
         return Err(format!("block `{}` already exists", block_name));
     }
 
-    let spans = named_block_spans(text, parent_block);
-    if spans.is_empty() {
-        return Err(format!("parent block `{}` was not found", parent_block));
-    }
-    if spans.len() > 1 {
-        return Err(format!(
-            "parent block `{}` appears {} times; refusing ambiguous insertion",
-            parent_block,
-            spans.len()
-        ));
-    }
-
-    let parent = &spans[0];
     let insertion = normalized_block_content(content)?;
-    let insert_at = match position.unwrap_or("end") {
-        "start" => parent.open + 1,
-        "end" => parent.close,
-        other => return Err(format!("unsupported insert position `{}`", other)),
-    };
+    let parent = unique_named_block(text, parent_block, "parent block")?;
+    let insert_at = insertion_offset(&parent, position.unwrap_or("end"))?;
 
+    Ok(insert_text_at(text, insert_at, &insertion))
+}
+
+fn unique_named_block(text: &str, name: &str, label: &str) -> Result<BlockSpan, String> {
+    let spans = named_block_spans(text, name);
+    match spans.len() {
+        0 => Err(format!("{} `{}` was not found", label, name)),
+        1 => Ok(spans[0].clone()),
+        count => Err(format!(
+            "{} `{}` appears {} times; refusing ambiguous insertion",
+            label, name, count
+        )),
+    }
+}
+
+fn insertion_offset(parent: &BlockSpan, position: &str) -> Result<usize, String> {
+    match position {
+        "start" => Ok(parent.open + 1),
+        "end" => Ok(parent.close),
+        other => Err(format!("unsupported insert position `{}`", other)),
+    }
+}
+
+fn insert_text_at(text: &str, insert_at: usize, insertion: &str) -> String {
     let mut edited = String::new();
     edited.push_str(&text[..insert_at]);
     if !text[..insert_at].ends_with('\n') {
         edited.push('\n');
     }
-    edited.push_str(&insertion);
+    edited.push_str(insertion);
     if !insertion.ends_with('\n') {
         edited.push('\n');
     }
     edited.push_str(&text[insert_at..]);
-    Ok(edited)
+    edited
 }
 
 fn normalized_block_content(content: &str) -> Result<String, String> {

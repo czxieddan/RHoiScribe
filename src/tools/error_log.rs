@@ -95,45 +95,63 @@ fn looks_like_error_line(line: &str) -> bool {
 
 fn classify_line(line: &str) -> String {
     let lower = line.to_ascii_lowercase();
+    category_rules()
+        .iter()
+        .find(|rule| rule.matches(&lower))
+        .map(|rule| rule.category.to_string())
+        .unwrap_or_else(|| "other".to_string())
+}
 
-    if lower.contains("localisation")
-        || lower.contains("localization")
-        || lower.contains(".yml")
-        || lower.contains("invalid yaml")
-    {
-        "localisation".to_string()
-    } else if lower.contains("gui")
-        || lower.contains(".gui")
-        || lower.contains("sprite")
-        || lower.contains(".gfx")
-        || lower.contains("texture")
-    {
-        "interface".to_string()
-    } else if lower.contains("focus") || lower.contains("national_focus") {
-        "focus".to_string()
-    } else if lower.contains("decision") || lower.contains("mission") {
-        "decision".to_string()
-    } else if lower.contains("event") || lower.contains("namespace") {
-        "event".to_string()
-    } else if lower.contains("idea") || lower.contains("modifier") {
-        "idea_or_modifier".to_string()
-    } else if lower.contains("history") || lower.contains("state") || lower.contains("oob") {
-        "history".to_string()
-    } else if lower.contains("map")
-        || lower.contains("province")
-        || lower.contains("strategic region")
-        || lower.contains("adjacency")
-    {
-        "map".to_string()
-    } else if lower.contains("unknown command")
-        || lower.contains("unexpected token")
-        || lower.contains("token")
-        || lower.contains("database")
-    {
-        "script_syntax".to_string()
-    } else {
-        "other".to_string()
+struct CategoryRule {
+    category: &'static str,
+    keywords: &'static [&'static str],
+}
+
+impl CategoryRule {
+    fn matches(&self, line: &str) -> bool {
+        self.keywords.iter().any(|keyword| line.contains(keyword))
     }
+}
+
+fn category_rules() -> &'static [CategoryRule] {
+    &[
+        CategoryRule {
+            category: "localisation",
+            keywords: &["localisation", "localization", ".yml", "invalid yaml"],
+        },
+        CategoryRule {
+            category: "interface",
+            keywords: &["gui", ".gui", "sprite", ".gfx", "texture"],
+        },
+        CategoryRule {
+            category: "focus",
+            keywords: &["focus", "national_focus"],
+        },
+        CategoryRule {
+            category: "decision",
+            keywords: &["decision", "mission"],
+        },
+        CategoryRule {
+            category: "event",
+            keywords: &["event", "namespace"],
+        },
+        CategoryRule {
+            category: "idea_or_modifier",
+            keywords: &["idea", "modifier"],
+        },
+        CategoryRule {
+            category: "history",
+            keywords: &["history", "state", "oob"],
+        },
+        CategoryRule {
+            category: "map",
+            keywords: &["map", "province", "strategic region", "adjacency"],
+        },
+        CategoryRule {
+            category: "script_syntax",
+            keywords: &["unknown command", "unexpected token", "token", "database"],
+        },
+    ]
 }
 
 fn likely_changed_paths(entries: &[ErrorLogEntry], changed_paths: &[String]) -> Vec<String> {

@@ -51,117 +51,47 @@ struct Color {
     alpha: u8,
 }
 
+#[derive(Debug, Clone)]
+struct AssetPlan {
+    sprite_name: String,
+    gui_name: String,
+    width: u32,
+    height: u32,
+    style: String,
+    texture: String,
+    primary: Color,
+    secondary: Color,
+    shadow: bool,
+    glow: bool,
+    emboss: bool,
+    write_gui: bool,
+    png_path: String,
+    svg_path: String,
+    gfx_path: String,
+    gui_path: String,
+}
+
 pub fn generate_gui_gfx_asset(
     request: GenerateGuiGfxAssetRequest,
 ) -> Result<GenerateGuiGfxAssetResult, String> {
     if !request.approved {
-        return Ok(GenerateGuiGfxAssetResult {
-            experimental: true,
-            dry_run: request.dry_run,
-            approved: false,
-            applied: false,
-            files: Vec::new(),
-            messages: vec![
-                "Experimental GUI/GFX generation requires approved=true. Prefer existing project assets unless the user approved new procedural art.".to_string(),
-            ],
-        });
+        return Ok(unapproved_result(request.dry_run));
     }
 
-    validate_dimension(request.width, "width")?;
-    validate_dimension(request.height, "height")?;
-    validate_token(&request.asset_name, "asset_name")?;
-
-    let sprite_name = request
-        .sprite_name
-        .clone()
-        .unwrap_or_else(|| format!("GFX_{}", request.asset_name));
-    let gui_name = request
-        .gui_name
-        .clone()
-        .unwrap_or_else(|| request.asset_name.clone());
-    validate_token(&sprite_name, "sprite_name")?;
-    validate_token(&gui_name, "gui_name")?;
-
-    let relative_directory = normalize_asset_directory(request.relative_directory.as_deref())?;
-    let png_path = format!("{}/{}.png", relative_directory, request.asset_name);
-    let svg_path = format!("{}/source/{}.svg", relative_directory, request.asset_name);
-    let gfx_path = format!("interface/{}.gfx", request.asset_name);
-    let gui_path = format!("interface/{}.gui", request.asset_name);
-
-    let primary = parse_color(request.primary_color.as_deref()).unwrap_or(Color {
-        red: 49,
-        green: 82,
-        blue: 113,
-        alpha: 255,
-    });
-    let secondary = parse_color(request.secondary_color.as_deref()).unwrap_or(Color {
-        red: 205,
-        green: 170,
-        blue: 92,
-        alpha: 255,
-    });
-    let style = request.style.as_deref().unwrap_or("panel");
-    let texture = request.texture.as_deref().unwrap_or("noise");
+    let plan = AssetPlan::from_request(&request)?;
     let pixels = render_asset(RenderOptions {
-        width: request.width,
-        height: request.height,
-        primary,
-        secondary,
-        style,
-        texture,
-        shadow: request.shadow.unwrap_or(true),
-        glow: request.glow.unwrap_or(false),
-        emboss: request.emboss.unwrap_or(true),
+        width: plan.width,
+        height: plan.height,
+        primary: plan.primary,
+        secondary: plan.secondary,
+        style: &plan.style,
+        texture: &plan.texture,
+        shadow: plan.shadow,
+        glow: plan.glow,
+        emboss: plan.emboss,
     });
-    let png = encode_png_rgba(request.width, request.height, &pixels)?;
-    let svg = generate_svg(
-        request.width,
-        request.height,
-        primary,
-        secondary,
-        style,
-        texture,
-    );
-    let gfx = generate_gfx(&sprite_name, &png_path);
-    let gui = generate_gui(&gui_name, &sprite_name, request.width, request.height);
-
-    let mut files = vec![
-        GeneratedGuiGfxAssetFile {
-            kind: "png".to_string(),
-            path: png_path,
-            text_content: None,
-            content_base64: Some(base64_encode(&png)),
-            encoding: Some("binary".to_string()),
-            summary: "Procedural RGBA PNG texture.".to_string(),
-        },
-        GeneratedGuiGfxAssetFile {
-            kind: "svg".to_string(),
-            path: svg_path,
-            text_content: Some(svg),
-            content_base64: None,
-            encoding: Some("utf-8".to_string()),
-            summary: "Editable procedural SVG source approximation.".to_string(),
-        },
-        GeneratedGuiGfxAssetFile {
-            kind: "gfx".to_string(),
-            path: gfx_path,
-            text_content: Some(gfx),
-            content_base64: None,
-            encoding: Some("utf-8".to_string()),
-            summary: "HOI4 spriteType registration.".to_string(),
-        },
-    ];
-
-    if request.write_gui.unwrap_or(false) {
-        files.push(GeneratedGuiGfxAssetFile {
-            kind: "gui".to_string(),
-            path: gui_path,
-            text_content: Some(gui),
-            content_base64: None,
-            encoding: Some("utf-8".to_string()),
-            summary: "Optional HOI4 GUI iconType block using the generated sprite.".to_string(),
-        });
-    }
+    let png = encode_png_rgba(plan.width, plan.height, &pixels)?;
+    let files = plan.generated_files(png);
 
     if !request.dry_run {
         let output_root = request.output_root.as_deref().ok_or_else(|| {
@@ -183,6 +113,148 @@ pub fn generate_gui_gfx_asset(
     })
 }
 
+impl AssetPlan {
+    fn from_request(request: &GenerateGuiGfxAssetRequest) -> Result<Self, String> {
+        validate_dimension(request.width, "width")?;
+        validate_dimension(request.height, "height")?;
+        validate_token(&request.asset_name, "asset_name")?;
+
+        let sprite_name = request
+            .sprite_name
+            .clone()
+            .unwrap_or_else(|| format!("GFX_{}", request.asset_name));
+        let gui_name = request
+            .gui_name
+            .clone()
+            .unwrap_or_else(|| request.asset_name.clone());
+        validate_token(&sprite_name, "sprite_name")?;
+        validate_token(&gui_name, "gui_name")?;
+
+        let relative_directory = normalize_asset_directory(request.relative_directory.as_deref())?;
+        Ok(Self {
+            sprite_name,
+            gui_name,
+            width: request.width,
+            height: request.height,
+            style: request.style.clone().unwrap_or_else(|| "panel".to_string()),
+            texture: request
+                .texture
+                .clone()
+                .unwrap_or_else(|| "noise".to_string()),
+            primary: parse_color(request.primary_color.as_deref()).unwrap_or(DEFAULT_PRIMARY),
+            secondary: parse_color(request.secondary_color.as_deref()).unwrap_or(DEFAULT_SECONDARY),
+            shadow: request.shadow.unwrap_or(true),
+            glow: request.glow.unwrap_or(false),
+            emboss: request.emboss.unwrap_or(true),
+            write_gui: request.write_gui.unwrap_or(false),
+            png_path: format!("{}/{}.png", relative_directory, request.asset_name),
+            svg_path: format!("{}/source/{}.svg", relative_directory, request.asset_name),
+            gfx_path: format!("interface/{}.gfx", request.asset_name),
+            gui_path: format!("interface/{}.gui", request.asset_name),
+        })
+    }
+
+    fn generated_files(&self, png: Vec<u8>) -> Vec<GeneratedGuiGfxAssetFile> {
+        let mut files = vec![
+            binary_file(
+                "png",
+                &self.png_path,
+                base64_encode(&png),
+                "Procedural RGBA PNG texture.",
+            ),
+            text_file(
+                "svg",
+                &self.svg_path,
+                generate_svg(
+                    self.width,
+                    self.height,
+                    self.primary,
+                    self.secondary,
+                    &self.style,
+                    &self.texture,
+                ),
+                "Editable procedural SVG source approximation.",
+            ),
+            text_file(
+                "gfx",
+                &self.gfx_path,
+                generate_gfx(&self.sprite_name, &self.png_path),
+                "HOI4 spriteType registration.",
+            ),
+        ];
+
+        if self.write_gui {
+            files.push(text_file(
+                "gui",
+                &self.gui_path,
+                generate_gui(&self.gui_name, &self.sprite_name, self.width, self.height),
+                "Optional HOI4 GUI iconType block using the generated sprite.",
+            ));
+        }
+
+        files
+    }
+}
+
+const DEFAULT_PRIMARY: Color = Color {
+    red: 49,
+    green: 82,
+    blue: 113,
+    alpha: 255,
+};
+
+const DEFAULT_SECONDARY: Color = Color {
+    red: 205,
+    green: 170,
+    blue: 92,
+    alpha: 255,
+};
+
+fn unapproved_result(dry_run: bool) -> GenerateGuiGfxAssetResult {
+    GenerateGuiGfxAssetResult {
+        experimental: true,
+        dry_run,
+        approved: false,
+        applied: false,
+        files: Vec::new(),
+        messages: vec![
+            "Experimental GUI/GFX generation requires approved=true. Prefer existing project assets unless the user approved new procedural art.".to_string(),
+        ],
+    }
+}
+
+fn binary_file(
+    kind: &str,
+    path: &str,
+    content_base64: String,
+    summary: &str,
+) -> GeneratedGuiGfxAssetFile {
+    GeneratedGuiGfxAssetFile {
+        kind: kind.to_string(),
+        path: path.to_string(),
+        text_content: None,
+        content_base64: Some(content_base64),
+        encoding: Some("binary".to_string()),
+        summary: summary.to_string(),
+    }
+}
+
+fn text_file(
+    kind: &str,
+    path: &str,
+    text_content: String,
+    summary: &str,
+) -> GeneratedGuiGfxAssetFile {
+    GeneratedGuiGfxAssetFile {
+        kind: kind.to_string(),
+        path: path.to_string(),
+        text_content: Some(text_content),
+        content_base64: None,
+        encoding: Some("utf-8".to_string()),
+        summary: summary.to_string(),
+    }
+}
+
 struct RenderOptions<'a> {
     width: u32,
     height: u32,
@@ -198,65 +270,11 @@ struct RenderOptions<'a> {
 fn render_asset(options: RenderOptions<'_>) -> Vec<u8> {
     let pixel_count = (options.width * options.height) as usize;
     let mut pixels = vec![0u8; pixel_count * 4];
-    let radius = match options.style {
-        "button" => (options.height as f32 * 0.22).clamp(3.0, 14.0),
-        "badge" => (options.width.min(options.height) as f32) * 0.5,
-        _ => (options.width.min(options.height) as f32 * 0.08).clamp(2.0, 10.0),
-    };
+    let radius = corner_radius(&options);
 
     for y in 0..options.height {
         for x in 0..options.width {
-            let fx = if options.width <= 1 {
-                0.0
-            } else {
-                x as f32 / (options.width - 1) as f32
-            };
-            let fy = if options.height <= 1 {
-                0.0
-            } else {
-                y as f32 / (options.height - 1) as f32
-            };
-            let inside = rounded_rect_contains(
-                x as f32,
-                y as f32,
-                options.width as f32,
-                options.height as f32,
-                radius,
-            );
-            let mut color = if inside {
-                mix(
-                    options.primary,
-                    options.secondary,
-                    (fx * 0.35 + fy * 0.65).clamp(0.0, 1.0),
-                )
-            } else {
-                Color {
-                    red: 0,
-                    green: 0,
-                    blue: 0,
-                    alpha: 0,
-                }
-            };
-
-            if inside {
-                apply_texture(&mut color, options.texture, x, y);
-                if options.emboss {
-                    apply_emboss(&mut color, fx, fy);
-                }
-                apply_border(&mut color, x, y, options.width, options.height, radius);
-            } else if options.shadow || options.glow {
-                color = outer_effect_color(OuterEffectOptions {
-                    x: x as f32,
-                    y: y as f32,
-                    width: options.width as f32,
-                    height: options.height as f32,
-                    radius,
-                    shadow: options.shadow,
-                    glow: options.glow,
-                    secondary: options.secondary,
-                });
-            }
-
+            let color = render_pixel(&options, x, y, radius);
             let index = ((y * options.width + x) * 4) as usize;
             pixels[index] = color.red;
             pixels[index + 1] = color.green;
@@ -267,6 +285,83 @@ fn render_asset(options: RenderOptions<'_>) -> Vec<u8> {
 
     pixels
 }
+
+fn corner_radius(options: &RenderOptions<'_>) -> f32 {
+    match options.style {
+        "button" => (options.height as f32 * 0.22).clamp(3.0, 14.0),
+        "badge" => (options.width.min(options.height) as f32) * 0.5,
+        _ => (options.width.min(options.height) as f32 * 0.08).clamp(2.0, 10.0),
+    }
+}
+
+fn render_pixel(options: &RenderOptions<'_>, x: u32, y: u32, radius: f32) -> Color {
+    let fx = normalized_coordinate(x, options.width);
+    let fy = normalized_coordinate(y, options.height);
+    let inside = rounded_rect_contains(
+        x as f32,
+        y as f32,
+        options.width as f32,
+        options.height as f32,
+        radius,
+    );
+
+    if inside {
+        render_inner_pixel(options, x, y, fx, fy, radius)
+    } else if options.shadow || options.glow {
+        render_outer_pixel(options, x, y, radius)
+    } else {
+        TRANSPARENT
+    }
+}
+
+fn normalized_coordinate(value: u32, size: u32) -> f32 {
+    if size <= 1 {
+        0.0
+    } else {
+        value as f32 / (size - 1) as f32
+    }
+}
+
+fn render_inner_pixel(
+    options: &RenderOptions<'_>,
+    x: u32,
+    y: u32,
+    fx: f32,
+    fy: f32,
+    radius: f32,
+) -> Color {
+    let mut color = mix(
+        options.primary,
+        options.secondary,
+        (fx * 0.35 + fy * 0.65).clamp(0.0, 1.0),
+    );
+    apply_texture(&mut color, options.texture, x, y);
+    if options.emboss {
+        apply_emboss(&mut color, fx, fy);
+    }
+    apply_border(&mut color, x, y, options.width, options.height, radius);
+    color
+}
+
+fn render_outer_pixel(options: &RenderOptions<'_>, x: u32, y: u32, radius: f32) -> Color {
+    outer_effect_color(OuterEffectOptions {
+        x: x as f32,
+        y: y as f32,
+        width: options.width as f32,
+        height: options.height as f32,
+        radius,
+        shadow: options.shadow,
+        glow: options.glow,
+        secondary: options.secondary,
+    })
+}
+
+const TRANSPARENT: Color = Color {
+    red: 0,
+    green: 0,
+    blue: 0,
+    alpha: 0,
+};
 
 fn rounded_rect_contains(x: f32, y: f32, width: f32, height: f32, radius: f32) -> bool {
     if width <= 0.0 || height <= 0.0 {

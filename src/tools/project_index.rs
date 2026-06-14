@@ -3,6 +3,7 @@ use std::{fs, path::Path, sync::Arc, thread};
 use serde::{Deserialize, Serialize};
 
 use super::ScanRoot;
+use super::hoi4_keys::flag_entity_type;
 use super::paradox_lexer::{Token, TokenKind, tokenize};
 use super::project_files::{ProjectFile, collect_project_files};
 
@@ -600,25 +601,6 @@ fn worker_count(file_count: usize) -> usize {
         .map(usize::from)
         .unwrap_or(1)
         .clamp(1, file_count)
-}
-
-fn flag_entity_type(key: &str) -> Option<&'static str> {
-    let flag_owner = key
-        .strip_prefix("set_")
-        .or_else(|| key.strip_prefix("has_"))
-        .or_else(|| key.strip_prefix("clr_"))
-        .or_else(|| key.strip_prefix("modify_"))?
-        .strip_suffix("_flag")?;
-
-    match flag_owner {
-        "country" => Some("country_flag"),
-        "global" => Some("global_flag"),
-        "state" => Some("state_flag"),
-        "character" | "unit_leader" => Some("character_flag"),
-        "mio" => Some("mio_flag"),
-        "project" | "facility" => Some("project_flag"),
-        _ => None,
-    }
 }
 
 fn is_variable_key(key: &str) -> bool {

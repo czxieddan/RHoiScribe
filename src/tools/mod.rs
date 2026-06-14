@@ -1,6 +1,7 @@
 mod environment;
 mod error_log;
 mod gui_gfx_asset;
+mod hoi4_keys;
 mod paradox_lexer;
 mod project_files;
 mod project_index;
@@ -50,96 +51,112 @@ const TOOL_SPECS: &[ToolSpec] = &[
         title: "Generate localisation batch",
         description: "Generate a HOI4 localisation yml file, using UTF-8 BOM when writing. file_stem may include subdirectories or a complete mod-relative localisation path.",
         required: &["language", "file_stem", "entries", "dry_run"],
+        handler: call_generate_localisation_batch,
     },
     ToolSpec {
         name: "generate_focus_batch",
         title: "Generate focus batch",
         description: "Generate a minimal national focus file and matching localisation dry-run.",
         required: &["country_tag", "tree_id", "focuses", "dry_run"],
+        handler: call_generate_focus_batch,
     },
     ToolSpec {
         name: "generate_event_batch",
         title: "Generate event batch",
         description: "Generate a minimal HOI4 country event file and matching localisation dry-run.",
         required: &["namespace", "events", "dry_run"],
+        handler: call_generate_event_batch,
     },
     ToolSpec {
         name: "generate_decision_batch",
         title: "Generate decision batch",
         description: "Generate a minimal decision category file and matching localisation dry-run.",
         required: &["category_id", "decisions", "dry_run"],
+        handler: call_generate_decision_batch,
     },
     ToolSpec {
         name: "search_hoi4_knowledge",
         title: "Search HOI4 knowledge",
         description: "Search bundled HOI4 modding knowledge topics and return matching MCP resource URIs.",
         required: &["query"],
+        handler: call_search_hoi4_knowledge,
     },
     ToolSpec {
         name: "scan_unique_identifiers",
         title: "Scan unique identifiers",
         description: "Concurrently scan mod and game roots for structured HOI4 identifiers before creating new IDs, and report duplicate, overwrite, and replace_path risks.",
         required: &["roots", "candidates"],
+        handler: call_scan_unique_identifiers,
     },
     ToolSpec {
         name: "discover_hoi4_environment",
         title: "Discover HOI4 environment",
         description: "Find the HOI4 game directory through Steam metadata first, then optional folder scanning, and read launcher-settings.json for the document data path and game version.",
         required: &[],
+        handler: call_discover_hoi4_environment,
     },
     ToolSpec {
         name: "validate_hoi4_debug_run",
         title: "Validate HOI4 debug run",
         description: "Check the game path, document data folders, launcher mod descriptors, active playset, dependency descriptors, and optionally launch hoi4.exe with debug arguments.",
         required: &["game_path", "document_path", "workspace_mod_path"],
+        handler: call_validate_hoi4_debug_run,
     },
     ToolSpec {
         name: "classify_error_log",
         title: "Classify HOI4 error log",
         description: "Group error.log lines by likely HOI4 subsystem and link messages back to changed files when paths are provided.",
         required: &["error_log_path"],
+        handler: call_classify_error_log,
     },
     ToolSpec {
         name: "index_hoi4_project",
         title: "Index HOI4 project",
         description: "Concurrently index HOI4 mod and game roots into structured definitions and references for flags, variables, scripted triggers/effects, GUI, GFX, and localisation.",
         required: &["roots"],
+        handler: call_index_hoi4_project,
     },
     ToolSpec {
         name: "validate_hoi4_project",
         title: "Validate HOI4 project",
         description: "Run red/yellow/green static checks over indexed HOI4 roots for duplicate definitions, brace balance, missing GFX textures or sprites, localisation references, and replace_path risks.",
         required: &["roots"],
+        handler: call_validate_hoi4_project,
     },
     ToolSpec {
         name: "repair_hoi4_project",
         title: "Repair HOI4 project",
         description: "Dry-run or apply fast HOI4 project repairs for UTF-8 BOM rules, Paradox script formatting, sound/music media checks, and ffmpeg approval-gated guidance.",
         required: &["roots", "dry_run"],
+        handler: call_repair_hoi4_project,
     },
     ToolSpec {
         name: "edit_hoi4_script_file",
         title: "Edit HOI4 script file",
         description: "Modify an existing HOI4 txt/gui/gfx/lua script file inside workspace_root by replacing a named block or inserting a new named block, with dry-run preview, brace checks, formatting, and encoding preservation.",
         required: &["path", "operation", "dry_run"],
+        handler: call_edit_hoi4_script_file,
     },
     ToolSpec {
         name: "generate_gui_gfx_asset",
         title: "Generate GUI/GFX asset",
         description: "Experimentally generate a local procedural HOI4 PNG asset, .gfx sprite registration, and optional .gui files without external image models; writing requires approved=true.",
         required: &["asset_name", "width", "height", "approved", "dry_run"],
+        handler: call_generate_gui_gfx_asset,
     },
     ToolSpec {
         name: "validate_hoi4_paths",
         title: "Validate HOI4 paths",
         description: "Validate generated paths against safe HOI4 mod folder conventions.",
         required: &["paths"],
+        handler: call_validate_hoi4_paths,
     },
     ToolSpec {
         name: "format_paradox_script",
         title: "Format Paradox script",
         description: "Apply basic readable indentation to Paradox-style key/value script.",
         required: &["script"],
+        handler: call_format_paradox_script,
     },
 ];
 
@@ -249,18 +266,21 @@ pub struct KnowledgeSearchResult {
     pub matches: Vec<KnowledgeSearchMatch>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct ToolCatalog {
     tools: &'static [ToolSpec],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 struct ToolSpec {
     name: &'static str,
     title: &'static str,
     description: &'static str,
     required: &'static [&'static str],
+    handler: ToolHandler,
 }
+
+type ToolHandler = fn(JsonObject) -> Result<CallToolResult, ToolError>;
 
 #[derive(Debug)]
 pub enum ToolError {
@@ -286,105 +306,12 @@ impl ToolCatalog {
     }
 
     pub fn call(&self, name: &str, arguments: JsonObject) -> Result<CallToolResult, ToolError> {
-        match name {
-            "generate_localisation_batch" => {
-                let request = parse_arguments::<LocalisationBatchRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::generate_localisation_batch(request)?
-                )))
-            }
-            "generate_focus_batch" => {
-                let request = parse_arguments::<FocusBatchRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::generate_focus_batch(request)?
-                )))
-            }
-            "generate_event_batch" => {
-                let request = parse_arguments::<EventBatchRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::generate_event_batch(request)?
-                )))
-            }
-            "generate_decision_batch" => {
-                let request = parse_arguments::<DecisionBatchRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::generate_decision_batch(request)?
-                )))
-            }
-            "search_hoi4_knowledge" => {
-                let request = parse_arguments::<SearchHoi4KnowledgeRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::search_hoi4_knowledge(request)?
-                )))
-            }
-            "scan_unique_identifiers" => {
-                let request = parse_arguments::<UniqueIdentifierScanRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::scan_unique_identifiers(request)?
-                )))
-            }
-            "discover_hoi4_environment" => {
-                let request = parse_arguments::<DiscoverHoi4EnvironmentRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::discover_hoi4_environment(request)?
-                )))
-            }
-            "validate_hoi4_debug_run" => {
-                let request = parse_arguments::<Hoi4DebugRunRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::validate_hoi4_debug_run(request)
-                )))
-            }
-            "classify_error_log" => {
-                let request = parse_arguments::<ClassifyErrorLogRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::classify_error_log(request)?
-                )))
-            }
-            "index_hoi4_project" => {
-                let request = parse_arguments::<ProjectIndexRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::index_hoi4_project(request)?
-                )))
-            }
-            "validate_hoi4_project" => {
-                let request = parse_arguments::<ProjectValidationRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::validate_hoi4_project(request)?
-                )))
-            }
-            "repair_hoi4_project" => {
-                let request = parse_arguments::<RepairHoi4ProjectRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::repair_hoi4_project(request)?
-                )))
-            }
-            "edit_hoi4_script_file" => {
-                let request = parse_arguments::<EditHoi4ScriptFileRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::edit_hoi4_script_file(request)?
-                )))
-            }
-            "generate_gui_gfx_asset" => {
-                let request = parse_arguments::<GenerateGuiGfxAssetRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::generate_gui_gfx_asset(request)?
-                )))
-            }
-            "validate_hoi4_paths" => {
-                let request = parse_arguments::<ValidateHoi4PathsRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::validate_hoi4_paths(request)
-                )))
-            }
-            "format_paradox_script" => {
-                let request = parse_arguments::<FormatParadoxScriptRequest>(arguments)?;
-                Ok(CallToolResult::structured(json!(
-                    ToolEngine::format_paradox_script(request)
-                )))
-            }
-            _ => Err(ToolError::UnknownTool(name.to_string())),
-        }
+        let tool = self
+            .tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
+        (tool.handler)(arguments)
     }
 }
 
@@ -650,6 +577,114 @@ where
     T: for<'de> Deserialize<'de>,
 {
     serde_json::from_value(Value::Object(arguments)).map_err(ToolError::InvalidArguments)
+}
+
+fn structured_result<T: Serialize>(result: T) -> CallToolResult {
+    CallToolResult::structured(json!(result))
+}
+
+fn call_generate_localisation_batch(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<LocalisationBatchRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::generate_localisation_batch(
+        request,
+    )?))
+}
+
+fn call_generate_focus_batch(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<FocusBatchRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::generate_focus_batch(
+        request,
+    )?))
+}
+
+fn call_generate_event_batch(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<EventBatchRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::generate_event_batch(
+        request,
+    )?))
+}
+
+fn call_generate_decision_batch(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<DecisionBatchRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::generate_decision_batch(
+        request,
+    )?))
+}
+
+fn call_search_hoi4_knowledge(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<SearchHoi4KnowledgeRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::search_hoi4_knowledge(
+        request,
+    )?))
+}
+
+fn call_scan_unique_identifiers(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<UniqueIdentifierScanRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::scan_unique_identifiers(
+        request,
+    )?))
+}
+
+fn call_discover_hoi4_environment(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<DiscoverHoi4EnvironmentRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::discover_hoi4_environment(
+        request,
+    )?))
+}
+
+fn call_validate_hoi4_debug_run(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<Hoi4DebugRunRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::validate_hoi4_debug_run(
+        request,
+    )))
+}
+
+fn call_classify_error_log(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<ClassifyErrorLogRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::classify_error_log(request)?))
+}
+
+fn call_index_hoi4_project(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<ProjectIndexRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::index_hoi4_project(request)?))
+}
+
+fn call_validate_hoi4_project(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<ProjectValidationRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::validate_hoi4_project(
+        request,
+    )?))
+}
+
+fn call_repair_hoi4_project(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<RepairHoi4ProjectRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::repair_hoi4_project(request)?))
+}
+
+fn call_edit_hoi4_script_file(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<EditHoi4ScriptFileRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::edit_hoi4_script_file(
+        request,
+    )?))
+}
+
+fn call_generate_gui_gfx_asset(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<GenerateGuiGfxAssetRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::generate_gui_gfx_asset(
+        request,
+    )?))
+}
+
+fn call_validate_hoi4_paths(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<ValidateHoi4PathsRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::validate_hoi4_paths(request)))
+}
+
+fn call_format_paradox_script(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<FormatParadoxScriptRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::format_paradox_script(
+        request,
+    )))
 }
 
 fn input_schema(required: &[&str]) -> JsonObject {

@@ -64,6 +64,14 @@ struct OggProbe {
     channels: Option<u32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FfmpegDetection {
+    command: Option<String>,
+    install_attempted: bool,
+    install_succeeded: bool,
+    install_error: Option<String>,
+}
+
 pub fn repair_hoi4_project(
     request: RepairHoi4ProjectRequest,
 ) -> Result<RepairHoi4ProjectResult, String> {
@@ -86,24 +94,8 @@ pub fn repair_hoi4_project(
         request.dry_run,
     );
 
-    let mut checks = Vec::new();
-    let mut changes = Vec::new();
-
-    for file in &files {
-        if should_have_utf8_bom(&file.relative_path) {
-            ensure_bom(file, apply, &mut checks, &mut changes)?;
-        } else if should_have_utf8_without_bom(&file.relative_path) {
-            ensure_no_bom(file, apply, &mut checks, &mut changes)?;
-        }
-
-        if format_scripts && should_format_script(&file.relative_path) {
-            format_script_file(file, apply, &mut checks, &mut changes)?;
-        }
-
-        if check_media {
-            check_media_file(file, &ffmpeg, &mut checks);
-        }
-    }
+    let (mut checks, mut changes) =
+        repair_files(&files, apply, format_scripts, check_media, &ffmpeg)?;
 
     checks.push(check(
         "repair_scan_completed",
@@ -142,6 +134,56 @@ pub fn repair_hoi4_project(
             "Dry-run only; no files were changed.".to_string()
         }],
     })
+}
+
+fn repair_files(
+    files: &[ProjectFile],
+    apply: bool,
+    format_scripts: bool,
+    check_media: bool,
+    ffmpeg: &FfmpegStatus,
+) -> Result<(Vec<RepairCheck>, Vec<RepairChange>), String> {
+    let mut checks = Vec::new();
+    let mut changes = Vec::new();
+
+    for file in files {
+        repair_encoding(file, apply, &mut checks, &mut changes)?;
+        repair_formatting(file, apply, format_scripts, &mut checks, &mut changes)?;
+        if check_media {
+            check_media_file(file, ffmpeg, &mut checks);
+        }
+    }
+
+    Ok((checks, changes))
+}
+
+fn repair_encoding(
+    file: &ProjectFile,
+    apply: bool,
+    checks: &mut Vec<RepairCheck>,
+    changes: &mut Vec<RepairChange>,
+) -> Result<(), String> {
+    if should_have_utf8_bom(&file.relative_path) {
+        ensure_bom(file, apply, checks, changes)
+    } else if should_have_utf8_without_bom(&file.relative_path) {
+        ensure_no_bom(file, apply, checks, changes)
+    } else {
+        Ok(())
+    }
+}
+
+fn repair_formatting(
+    file: &ProjectFile,
+    apply: bool,
+    format_scripts: bool,
+    checks: &mut Vec<RepairCheck>,
+    changes: &mut Vec<RepairChange>,
+) -> Result<(), String> {
+    if format_scripts && should_format_script(&file.relative_path) {
+        format_script_file(file, apply, checks, changes)
+    } else {
+        Ok(())
+    }
 }
 
 fn ensure_bom(
@@ -274,6 +316,11 @@ fn format_script_file(
 }
 
 fn check_media_file(file: &ProjectFile, ffmpeg: &FfmpegStatus, checks: &mut Vec<RepairCheck>) {
+    check_sound_file(file, checks);
+    check_music_file(file, ffmpeg, checks);
+}
+
+fn check_sound_file(file: &ProjectFile, checks: &mut Vec<RepairCheck>) {
     if file.relative_path.starts_with("sound/") && !has_extension(&file.relative_path, "wav") {
         checks.push(check(
             "sound_wav_only",
@@ -284,38 +331,56 @@ fn check_media_file(file: &ProjectFile, ffmpeg: &FfmpegStatus, checks: &mut Vec<
             Some("Move this file out of sound/ or convert it to .wav.".to_string()),
         ));
     }
+}
 
-    if file.relative_path.starts_with("music/") && has_extension(&file.relative_path, "ogg") {
-        if !ffmpeg.available {
-            checks.push(check(
-                "music_ogg_probe",
-                "yellow",
-                "warning",
-                &file.relative_path,
-                "Cannot verify music OGG sample rate, bit depth, and channels because ffmpeg/ffprobe is not available.",
-                Some("Install ffmpeg, then rerun repair_hoi4_project with check_media enabled.".to_string()),
-            ));
-            return;
-        }
-
-        let probe = probe_ogg(file, ffmpeg);
-        if probe.sample_rate != Some(44_100)
-            || probe.bits_per_sample != Some(32)
-            || probe.channels != Some(2)
-        {
-            checks.push(check(
-                "music_ogg_format",
-                "yellow",
-                "warning",
-                &file.relative_path,
-                &format!(
-                    "Music OGG should be 44100 Hz, 32-bit, 2 channels; detected rate={:?}, bits={:?}, channels={:?}.",
-                    probe.sample_rate, probe.bits_per_sample, probe.channels
-                ),
-                Some("Use ffmpeg to convert the track to 44100 Hz, 32-bit, stereo OGG.".to_string()),
-            ));
-        }
+fn check_music_file(file: &ProjectFile, ffmpeg: &FfmpegStatus, checks: &mut Vec<RepairCheck>) {
+    if !file.relative_path.starts_with("music/") || !has_extension(&file.relative_path, "ogg") {
+        return;
     }
+    if !ffmpeg.available {
+        checks.push(music_ogg_probe_check(file));
+        return;
+    }
+
+    let probe = probe_ogg(file, ffmpeg);
+    if !probe.matches_hoi4_music_format() {
+        checks.push(music_ogg_format_check(file, &probe));
+    }
+}
+
+impl OggProbe {
+    fn matches_hoi4_music_format(&self) -> bool {
+        self.sample_rate == Some(44_100)
+            && self.bits_per_sample == Some(32)
+            && self.channels == Some(2)
+    }
+}
+
+fn music_ogg_probe_check(file: &ProjectFile) -> RepairCheck {
+    check(
+        "music_ogg_probe",
+        "yellow",
+        "warning",
+        &file.relative_path,
+        "Cannot verify music OGG sample rate, bit depth, and channels because ffmpeg/ffprobe is not available.",
+        Some(
+            "Install ffmpeg, then rerun repair_hoi4_project with check_media enabled.".to_string(),
+        ),
+    )
+}
+
+fn music_ogg_format_check(file: &ProjectFile, probe: &OggProbe) -> RepairCheck {
+    check(
+        "music_ogg_format",
+        "yellow",
+        "warning",
+        &file.relative_path,
+        &format!(
+            "Music OGG should be 44100 Hz, 32-bit, 2 channels; detected rate={:?}, bits={:?}, channels={:?}.",
+            probe.sample_rate, probe.bits_per_sample, probe.channels
+        ),
+        Some("Use ffmpeg to convert the track to 44100 Hz, 32-bit, stereo OGG.".to_string()),
+    )
 }
 
 fn probe_ogg(file: &ProjectFile, ffmpeg: &FfmpegStatus) -> OggProbe {
@@ -398,64 +463,131 @@ fn detect_ffmpeg_with_installer(
     dry_run: bool,
     installer: fn() -> Result<(), String>,
 ) -> FfmpegStatus {
-    let mut command = ffmpeg_command(requested_path);
-    let mut install_attempted = false;
-    let mut install_succeeded = false;
-    let mut install_error = None;
-
-    if needed && command.is_none() && install_requested && !dry_run {
-        install_attempted = true;
-        match installer() {
-            Ok(()) => {
-                command = ffmpeg_command(requested_path);
-                install_succeeded = command.is_some();
-                if !install_succeeded {
-                    install_error = Some(
-                        "ffmpeg installer completed, but ffmpeg was not found on PATH afterward"
-                            .to_string(),
-                    );
-                }
-            }
-            Err(error) => install_error = Some(error),
-        }
-    }
-
-    let available = command.is_some();
+    let detection = detect_or_install_ffmpeg(
+        requested_path,
+        install_requested,
+        needed,
+        dry_run,
+        installer,
+    );
+    let available = detection.command.is_some();
     let install_required = needed && !available;
     let install_script = ffmpeg_install_script();
+    let message = ffmpeg_status_message(
+        available,
+        detection.install_attempted,
+        install_requested,
+        install_required,
+        dry_run,
+        detection.install_error.as_deref(),
+    );
 
     FfmpegStatus {
         available,
-        command,
+        command: detection.command,
         install_required,
-        install_attempted,
-        install_succeeded,
-        install_error: install_error.clone(),
+        install_attempted: detection.install_attempted,
+        install_succeeded: detection.install_succeeded,
+        install_error: detection.install_error,
         install_script,
-        message: if available {
-            if install_attempted {
-                "ffmpeg is available after approved silent installation attempt.".to_string()
-            } else {
-                "ffmpeg is available for media probing.".to_string()
-            }
-        } else if install_attempted {
-            format!(
-                "Approved silent ffmpeg installation was attempted, but ffmpeg is still unavailable: {}",
-                install_error.unwrap_or_else(|| "unknown installer error".to_string())
-            )
-        } else if install_requested && install_required {
-            if dry_run {
-                "ffmpeg is required for media probing. Dry-run mode did not install it; rerun with dry_run=false and install_ffmpeg=true after user approval.".to_string()
-            } else {
-                "ffmpeg is required for media probing. Set install_ffmpeg=true only after user approval to allow a silent installation attempt.".to_string()
-            }
-        } else if install_required {
-            "ffmpeg is required for full music checks. Ask the user before installing it."
-                .to_string()
-        } else {
-            "ffmpeg was not needed for this request.".to_string()
-        },
+        message,
     }
+}
+
+fn detect_or_install_ffmpeg(
+    requested_path: Option<&str>,
+    install_requested: bool,
+    needed: bool,
+    dry_run: bool,
+    installer: fn() -> Result<(), String>,
+) -> FfmpegDetection {
+    let mut detection = FfmpegDetection {
+        command: ffmpeg_command(requested_path),
+        install_attempted: false,
+        install_succeeded: false,
+        install_error: None,
+    };
+
+    if should_attempt_ffmpeg_install(
+        needed,
+        install_requested,
+        dry_run,
+        detection.command.is_some(),
+    ) {
+        detection.install_attempted = true;
+        apply_ffmpeg_install_result(&mut detection, requested_path, installer());
+    }
+
+    detection
+}
+
+fn should_attempt_ffmpeg_install(
+    needed: bool,
+    install_requested: bool,
+    dry_run: bool,
+    already_available: bool,
+) -> bool {
+    needed && !already_available && install_requested && !dry_run
+}
+
+fn apply_ffmpeg_install_result(
+    detection: &mut FfmpegDetection,
+    requested_path: Option<&str>,
+    result: Result<(), String>,
+) {
+    match result {
+        Ok(()) => {
+            detection.command = ffmpeg_command(requested_path);
+            detection.install_succeeded = detection.command.is_some();
+            if !detection.install_succeeded {
+                detection.install_error = Some(
+                    "ffmpeg installer completed, but ffmpeg was not found on PATH afterward"
+                        .to_string(),
+                );
+            }
+        }
+        Err(error) => detection.install_error = Some(error),
+    }
+}
+
+fn ffmpeg_status_message(
+    available: bool,
+    install_attempted: bool,
+    install_requested: bool,
+    install_required: bool,
+    dry_run: bool,
+    install_error: Option<&str>,
+) -> String {
+    if available {
+        return if install_attempted {
+            "ffmpeg is available after approved silent installation attempt.".to_string()
+        } else {
+            "ffmpeg is available for media probing.".to_string()
+        };
+    }
+
+    if install_attempted {
+        return format!(
+            "Approved silent ffmpeg installation was attempted, but ffmpeg is still unavailable: {}",
+            install_error.unwrap_or("unknown installer error")
+        );
+    }
+
+    ffmpeg_missing_message(install_requested, install_required, dry_run)
+}
+
+fn ffmpeg_missing_message(
+    install_requested: bool,
+    install_required: bool,
+    dry_run: bool,
+) -> String {
+    match (install_requested, install_required, dry_run) {
+        (true, true, true) => "ffmpeg is required for media probing. Dry-run mode did not install it; rerun with dry_run=false and install_ffmpeg=true after user approval.",
+        (true, true, false) => "ffmpeg is required for media probing. Set install_ffmpeg=true only after user approval to allow a silent installation attempt.",
+        (_, true, _) => "ffmpeg is required for full music checks. Ask the user before installing it.",
+        _ => "ffmpeg was not needed for this request.",
+    }
+    .to_string()
 }
 
 fn ffmpeg_command(requested_path: Option<&str>) -> Option<String> {
@@ -482,39 +614,49 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
 
 fn install_ffmpeg_silently() -> Result<(), String> {
     if cfg!(target_os = "windows") {
-        if command_available("winget") {
-            return run_installer(
-                "winget",
-                &[
-                    "install",
-                    "--id",
-                    "Gyan.FFmpeg",
-                    "--source",
-                    "winget",
-                    "--silent",
-                    "--accept-package-agreements",
-                    "--accept-source-agreements",
-                ],
-            );
-        }
-
-        if command_available("choco") {
-            return run_installer("choco", &["install", "ffmpeg", "-y", "--no-progress"]);
-        }
-
-        return Err(
-            "winget and choco are not available for silent ffmpeg installation".to_string(),
-        );
+        return install_ffmpeg_windows();
     }
 
     if cfg!(target_os = "macos") {
-        if command_available("brew") {
-            return run_installer("brew", &["install", "ffmpeg"]);
-        }
-
-        return Err("Homebrew is not available for silent ffmpeg installation".to_string());
+        return install_ffmpeg_macos();
     }
 
+    install_ffmpeg_linux()
+}
+
+fn install_ffmpeg_windows() -> Result<(), String> {
+    if command_available("winget") {
+        return run_installer(
+            "winget",
+            &[
+                "install",
+                "--id",
+                "Gyan.FFmpeg",
+                "--source",
+                "winget",
+                "--silent",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+            ],
+        );
+    }
+
+    if command_available("choco") {
+        return run_installer("choco", &["install", "ffmpeg", "-y", "--no-progress"]);
+    }
+
+    Err("winget and choco are not available for silent ffmpeg installation".to_string())
+}
+
+fn install_ffmpeg_macos() -> Result<(), String> {
+    if command_available("brew") {
+        return run_installer("brew", &["install", "ffmpeg"]);
+    }
+
+    Err("Homebrew is not available for silent ffmpeg installation".to_string())
+}
+
+fn install_ffmpeg_linux() -> Result<(), String> {
     if command_available("apt-get") {
         run_installer("sudo", &["-n", "apt-get", "update"])?;
         return run_installer("sudo", &["-n", "apt-get", "install", "-y", "ffmpeg"]);

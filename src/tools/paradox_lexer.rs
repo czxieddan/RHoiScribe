@@ -18,16 +18,7 @@ pub(crate) struct Token {
 }
 
 pub(crate) fn tokenize(content: &str) -> Vec<Token> {
-    let mut tokens = Vec::new();
-    let mut lexer = Lexer::new(content);
-
-    while let Some((index, character)) = lexer.next_char() {
-        if let Some(token) = lexer.consume_token(index, character) {
-            tokens.push(token);
-        }
-    }
-
-    tokens
+    Lexer::new(content).collect()
 }
 
 struct Lexer<'a> {
@@ -131,5 +122,19 @@ impl<'a> Lexer<'a> {
             line: start_line,
             start,
         }
+    }
+}
+
+impl Iterator for Lexer<'_> {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((index, character)) = self.next_char() {
+            if let Some(token) = self.consume_token(index, character) {
+                return Some(token);
+            }
+        }
+
+        None
     }
 }
