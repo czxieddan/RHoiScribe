@@ -8,9 +8,16 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use self::project_validation_localisation::missing_localisation_checks;
 use super::paradox_lexer::{TokenKind, tokenize};
 use super::project_files::ProjectFile;
 use super::{IndexedFile, ProjectIndexItem, ProjectIndexRequest, ScanRoot, project_index};
+
+#[path = "project_validation_localisation.rs"]
+mod project_validation_localisation;
+#[cfg(test)]
+#[path = "project_validation_tests.rs"]
+mod project_validation_tests;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectValidationRequest {
@@ -49,9 +56,29 @@ pub fn validate_hoi4_project(
         include_game_roots: request.include_game_roots,
     })?;
     let validation_files = validation_files_from_index(&index.files);
+    let mut checks = vec![index_completed_check(&index)];
+    check_duplicate_definitions(&index.definitions, &mut checks);
+    check_brace_balance(&validation_files, &mut checks)?;
+    check_replace_path_risks(&validation_files, &mut checks)?;
+    check_missing_gfx_textures(&request.roots, &index.references, &mut checks);
+    check_missing_gfx_sprites(&index.definitions, &index.references, &mut checks);
+    check_missing_localisation(&validation_files, &index.definitions, &mut checks)?;
+    sort_checks(&mut checks);
 
-    let mut checks = Vec::new();
-    checks.push(check(
+    let status = overall_status(&checks).to_string();
+
+    Ok(ProjectValidationResult {
+        status,
+        index_summary: index_summary(&index),
+        messages: vec![
+            "red blocks game-readability or likely load success; yellow needs review before release; green passed".to_string(),
+        ],
+        checks,
+    })
+}
+
+fn index_completed_check(index: &project_index::ProjectIndexResult) -> ProjectValidationCheck {
+    check(
         "index_completed",
         "green",
         "info",
@@ -64,15 +91,19 @@ pub fn validate_hoi4_project(
             index.references.len()
         ),
         None,
-    ));
+    )
+}
 
-    check_duplicate_definitions(&index.definitions, &mut checks);
-    check_brace_balance(&validation_files, &mut checks)?;
-    check_replace_path_risks(&validation_files, &mut checks)?;
-    check_missing_gfx_textures(&request.roots, &index.references, &mut checks);
-    check_missing_gfx_sprites(&index.definitions, &index.references, &mut checks);
-    check_missing_localisation(&validation_files, &index.definitions, &mut checks)?;
+fn index_summary(index: &project_index::ProjectIndexResult) -> String {
+    format!(
+        "{} file(s), {} definition(s), {} reference(s)",
+        index.scanned_files,
+        index.definitions.len(),
+        index.references.len()
+    )
+}
 
+fn sort_checks(checks: &mut [ProjectValidationCheck]) {
     checks.sort_by(|left, right| {
         (
             status_rank(&left.status),
@@ -89,22 +120,6 @@ pub fn validate_hoi4_project(
                 &right.message,
             ))
     });
-
-    let status = overall_status(&checks).to_string();
-
-    Ok(ProjectValidationResult {
-        status,
-        checks,
-        index_summary: format!(
-            "{} file(s), {} definition(s), {} reference(s)",
-            index.scanned_files,
-            index.definitions.len(),
-            index.references.len()
-        ),
-        messages: vec![
-            "red blocks game-readability or likely load success; yellow needs review before release; green passed".to_string(),
-        ],
-    })
 }
 
 fn validation_files_from_index(files: &[IndexedFile]) -> Vec<ProjectFile> {
@@ -386,60 +401,6 @@ fn brace_depth_check(path: &str, line: usize, depth: isize) -> ProjectValidation
     )
 }
 
-fn missing_localisation_checks(
-    file: ProjectFile,
-    defined_keys: &HashSet<String>,
-) -> Vec<ProjectValidationCheck> {
-    let Ok(content) = fs::read_to_string(&file.absolute_path) else {
-        return Vec::new();
-    };
-
-    let is_txt = extension_is(&file.relative_path, "txt");
-    localisation_references(&content, is_txt)
-        .into_iter()
-        .filter(|(_, value, _)| {
-            !defined_keys.contains(value.as_str()) && !is_inline_or_builtin_loc_value(value)
-        })
-        .map(|(key, value, line)| {
-            check(
-                "missing_localisation",
-                "yellow",
-                "warning",
-                &file.relative_path,
-                line,
-                &format!(
-                    "`{} = {}` looks like a localisation key but was not found in localisation files.",
-                    key, value
-                ),
-                Some(format!("Add localisation key `{}` or update the script reference.", value)),
-            )
-        })
-        .collect()
-}
-
-fn localisation_references(content: &str, is_txt: bool) -> Vec<(String, String, usize)> {
-    let tokens = tokenize(content);
-    let mut references = Vec::new();
-
-    for window in tokens.windows(3) {
-        if window[1].kind != TokenKind::Equals {
-            continue;
-        }
-        if !matches!(window[2].kind, TokenKind::Word | TokenKind::String) {
-            continue;
-        }
-        if is_localisation_reference_key(&window[0].text, is_txt) {
-            references.push((
-                window[0].text.clone(),
-                window[2].text.clone(),
-                window[0].line,
-            ));
-        }
-    }
-
-    references
-}
-
 fn check(
     id: &str,
     status: &str,
@@ -550,50 +511,8 @@ fn is_mod_descriptor(path: &str) -> bool {
     file_name == "descriptor.mod" || file_name.ends_with(".mod")
 }
 
-fn extension_is(path: &str, expected: &str) -> bool {
-    Path::new(path)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case(expected))
-}
-
 fn normalize_relative_path(path: &str) -> String {
     path.replace('\\', "/").trim().trim_matches('/').to_string()
-}
-
-fn is_localisation_reference_key(key: &str, is_txt: bool) -> bool {
-    match key {
-        "title"
-        | "desc"
-        | "description"
-        | "custom_effect_tooltip"
-        | "custom_trigger_tooltip"
-        | "tooltip"
-        | "delayed_event_text"
-        | "major"
-        | "minor" => true,
-        "name" => is_txt,
-        _ => false,
-    }
-}
-
-fn is_inline_or_builtin_loc_value(value: &str) -> bool {
-    if value.is_empty() {
-        return true;
-    }
-    if value.starts_with("GFX_")
-        || value.starts_with("generic_")
-        || matches!(value, "yes" | "no" | "always" | "ROOT" | "FROM" | "THIS")
-    {
-        return true;
-    }
-    if value
-        .chars()
-        .all(|character| character.is_ascii_digit() || matches!(character, '.' | '-' | '+' | '%'))
-    {
-        return true;
-    }
-    value.contains(' ')
 }
 
 fn overall_status(checks: &[ProjectValidationCheck]) -> &str {
@@ -612,143 +531,5 @@ fn status_rank(status: &str) -> u8 {
         "yellow" => 1,
         "green" => 2,
         _ => 3,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use super::{ProjectValidationCheck, ProjectValidationRequest, validate_hoi4_project};
-    use crate::tools::{ScanRoot, test_support::unique_test_dir};
-
-    #[test]
-    fn validation_reports_red_yellow_and_green_checks() {
-        let root = unique_test_dir("project-validation");
-        write_file(
-            &root,
-            "common/national_focus/sample_tree.txt",
-            "focus_tree = {\n\tid = sample_tree\n\tfocus = { id = sample_rebuild title = sample_rebuild desc = sample_rebuild_desc }\n\tfocus = { id = sample_rebuild }\n",
-        );
-        write_file(
-            &root,
-            "interface/sample_interface.gfx",
-            "spriteTypes = { spriteType = { name = \"GFX_sample_panel\" texturefile = \"gfx/interface/sample/missing_panel.png\" } }\n",
-        );
-        write_file(
-            &root,
-            "interface/sample_interface.gui",
-            "guiTypes = { containerWindowType = { name = \"sample_panel\" background = { quadTextureSprite = \"GFX_sample_missing\" } } }\n",
-        );
-        write_file(
-            &root,
-            "localisation/simp_chinese/validation_fixture_l_simp_chinese.yml",
-            "\u{feff}l_simp_chinese:\n sample_rebuild:0 \"重建\"\n",
-        );
-
-        let result = validate_hoi4_project(ProjectValidationRequest {
-            roots: vec![ScanRoot {
-                path: root.to_string_lossy().to_string(),
-                role: Some("mod".to_string()),
-            }],
-            include_game_roots: Some(true),
-        })
-        .expect("validation should complete");
-
-        assert_eq!(result.status, "red");
-        assert!(result.index_summary.contains("file"));
-        assert_check(
-            &result.checks,
-            "duplicate_definition",
-            "red",
-            "sample_rebuild",
-        );
-        assert_check(&result.checks, "brace_balance", "red", "");
-        assert_check(
-            &result.checks,
-            "missing_gfx_texture",
-            "red",
-            "missing_panel",
-        );
-        assert_check(
-            &result.checks,
-            "missing_gfx_sprite",
-            "yellow",
-            "GFX_sample_missing",
-        );
-        assert_check(
-            &result.checks,
-            "missing_localisation",
-            "yellow",
-            "sample_rebuild_desc",
-        );
-        assert_check(&result.checks, "index_completed", "green", "");
-
-        fs::remove_dir_all(root).expect("temp output should clean up");
-    }
-
-    #[test]
-    fn validation_avoids_gui_name_and_vanilla_texture_false_positives() {
-        let mod_root = unique_test_dir("project-validation-mod");
-        let game_root = unique_test_dir("project-validation-game");
-        write_file(
-            &mod_root,
-            "interface/sample_interface.gfx",
-            "spriteTypes = { spriteType = { name = \"GFX_sample_panel\" texturefile = \"gfx/interface/vanilla/panel.dds\" } }\n",
-        );
-        write_file(
-            &mod_root,
-            "interface/sample_interface.gui",
-            "guiTypes = { containerWindowType = { name = \"sample_panel\" background = { quadTextureSprite = \"GFX_sample_panel\" } } }\n",
-        );
-        write_file(
-            &game_root,
-            "gfx/interface/vanilla/panel.dds",
-            "fake texture",
-        );
-
-        let result = validate_hoi4_project(ProjectValidationRequest {
-            roots: vec![
-                ScanRoot {
-                    path: mod_root.to_string_lossy().to_string(),
-                    role: Some("mod".to_string()),
-                },
-                ScanRoot {
-                    path: game_root.to_string_lossy().to_string(),
-                    role: Some("game".to_string()),
-                },
-            ],
-            include_game_roots: Some(false),
-        })
-        .expect("validation should complete");
-
-        assert!(
-            !result
-                .checks
-                .iter()
-                .any(|check| check.id == "missing_gfx_texture")
-        );
-        assert!(!result.checks.iter().any(|check| {
-            check.id == "missing_localisation" && check.message.contains("sample_panel")
-        }));
-
-        fs::remove_dir_all(mod_root).expect("temp output should clean up");
-        fs::remove_dir_all(game_root).expect("temp output should clean up");
-    }
-
-    fn write_file(root: &std::path::Path, relative_path: &str, content: &str) {
-        let path = root.join(relative_path);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).expect("fixture parent should be created");
-        }
-        fs::write(path, content).expect("fixture file should be written");
-    }
-
-    fn assert_check(checks: &[ProjectValidationCheck], id: &str, status: &str, text: &str) {
-        assert!(checks.iter().any(|check| {
-            check.id == id
-                && check.status == status
-                && (text.is_empty() || check.message.contains(text))
-        }));
     }
 }

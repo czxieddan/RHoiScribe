@@ -38,76 +38,78 @@ struct EntityTypeAliases {
     inputs: &'static [&'static str],
 }
 
+const ENTITY_TYPE_ALIASES: &[EntityTypeAliases] = &[
+    EntityTypeAliases {
+        canonical: "focus_id",
+        inputs: &["focus", "national_focus", "focus_id"],
+    },
+    EntityTypeAliases {
+        canonical: "focus_tree_id",
+        inputs: &["focus_tree", "focus_tree_id"],
+    },
+    EntityTypeAliases {
+        canonical: "country_tag",
+        inputs: &["tag", "country", "country_tag"],
+    },
+    EntityTypeAliases {
+        canonical: "idea_token",
+        inputs: &["idea", "idea_token", "national_spirit"],
+    },
+    EntityTypeAliases {
+        canonical: "dynamic_modifier",
+        inputs: &["dynamic_modifier", "dynamic_modifier_token"],
+    },
+    EntityTypeAliases {
+        canonical: "decision_category",
+        inputs: &["decision_category", "decision_category_id"],
+    },
+    EntityTypeAliases {
+        canonical: "decision",
+        inputs: &["decision", "decision_id"],
+    },
+    EntityTypeAliases {
+        canonical: "event_id",
+        inputs: &["event", "event_id"],
+    },
+    EntityTypeAliases {
+        canonical: "event_namespace",
+        inputs: &["namespace", "event_namespace"],
+    },
+    EntityTypeAliases {
+        canonical: "character_flag",
+        inputs: &["character_flag", "unit_leader_flag"],
+    },
+    EntityTypeAliases {
+        canonical: "project_flag",
+        inputs: &["project_flag", "facility_flag"],
+    },
+    EntityTypeAliases {
+        canonical: "variable",
+        inputs: &["var", "variable", "temp_variable"],
+    },
+    EntityTypeAliases {
+        canonical: "localisation_key",
+        inputs: &[
+            "loc",
+            "localisation",
+            "localisation_key",
+            "localization_key",
+        ],
+    },
+    EntityTypeAliases {
+        canonical: "scripted_effect",
+        inputs: &["scripted_effect", "scripted_effect_id"],
+    },
+    EntityTypeAliases {
+        canonical: "scripted_trigger",
+        inputs: &["scripted_trigger", "scripted_trigger_id"],
+    },
+    EntityTypeAliases {
+        canonical: "character",
+        inputs: &["character", "character_id"],
+    },
+];
+
 fn entity_type_aliases() -> &'static [EntityTypeAliases] {
-    &[
-        EntityTypeAliases {
-            canonical: "focus_id",
-            inputs: &["focus", "national_focus", "focus_id"],
-        },
-        EntityTypeAliases {
-            canonical: "focus_tree_id",
-            inputs: &["focus_tree", "focus_tree_id"],
-        },
-        EntityTypeAliases {
-            canonical: "country_tag",
-            inputs: &["tag", "country", "country_tag"],
-        },
-        EntityTypeAliases {
-            canonical: "idea_token",
-            inputs: &["idea", "idea_token", "national_spirit"],
-        },
-        EntityTypeAliases {
-            canonical: "dynamic_modifier",
-            inputs: &["dynamic_modifier", "dynamic_modifier_token"],
-        },
-        EntityTypeAliases {
-            canonical: "decision_category",
-            inputs: &["decision_category", "decision_category_id"],
-        },
-        EntityTypeAliases {
-            canonical: "decision",
-            inputs: &["decision", "decision_id"],
-        },
-        EntityTypeAliases {
-            canonical: "event_id",
-            inputs: &["event", "event_id"],
-        },
-        EntityTypeAliases {
-            canonical: "event_namespace",
-            inputs: &["namespace", "event_namespace"],
-        },
-        EntityTypeAliases {
-            canonical: "character_flag",
-            inputs: &["character_flag", "unit_leader_flag"],
-        },
-        EntityTypeAliases {
-            canonical: "project_flag",
-            inputs: &["project_flag", "facility_flag"],
-        },
-        EntityTypeAliases {
-            canonical: "variable",
-            inputs: &["var", "variable", "temp_variable"],
-        },
-        EntityTypeAliases {
-            canonical: "localisation_key",
-            inputs: &[
-                "loc",
-                "localisation",
-                "localisation_key",
-                "localization_key",
-            ],
-        },
-        EntityTypeAliases {
-            canonical: "scripted_effect",
-            inputs: &["scripted_effect", "scripted_effect_id"],
-        },
-        EntityTypeAliases {
-            canonical: "scripted_trigger",
-            inputs: &["scripted_trigger", "scripted_trigger_id"],
-        },
-        EntityTypeAliases {
-            canonical: "character",
-            inputs: &["character", "character_id"],
-        },
-    ]
+    ENTITY_TYPE_ALIASES
 }

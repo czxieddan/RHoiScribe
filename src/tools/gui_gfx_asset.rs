@@ -2,6 +2,18 @@ use std::{fs, path::Path};
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+use self::gui_gfx_asset_render::crc32;
+use self::gui_gfx_asset_render::{
+    RenderOptions, base64_decode, base64_encode, encode_png_rgba, render_asset,
+};
+
+#[path = "gui_gfx_asset_render.rs"]
+mod gui_gfx_asset_render;
+#[cfg(test)]
+#[path = "gui_gfx_asset_tests.rs"]
+mod gui_gfx_asset_tests;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GenerateGuiGfxAssetRequest {
     pub output_root: Option<String>,
@@ -44,11 +56,11 @@ pub struct GenerateGuiGfxAssetResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Color {
-    red: u8,
-    green: u8,
-    blue: u8,
-    alpha: u8,
+pub(super) struct Color {
+    pub(super) red: u8,
+    pub(super) green: u8,
+    pub(super) blue: u8,
+    pub(super) alpha: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -119,30 +131,17 @@ impl AssetPlan {
         validate_dimension(request.height, "height")?;
         validate_token(&request.asset_name, "asset_name")?;
 
-        let sprite_name = request
-            .sprite_name
-            .clone()
-            .unwrap_or_else(|| format!("GFX_{}", request.asset_name));
-        let gui_name = request
-            .gui_name
-            .clone()
-            .unwrap_or_else(|| request.asset_name.clone());
-        validate_token(&sprite_name, "sprite_name")?;
-        validate_token(&gui_name, "gui_name")?;
-
+        let names = AssetNames::from_request(request)?;
         let relative_directory = normalize_asset_directory(request.relative_directory.as_deref())?;
         Ok(Self {
-            sprite_name,
-            gui_name,
+            sprite_name: names.sprite_name,
+            gui_name: names.gui_name,
             width: request.width,
             height: request.height,
-            style: request.style.clone().unwrap_or_else(|| "panel".to_string()),
-            texture: request
-                .texture
-                .clone()
-                .unwrap_or_else(|| "noise".to_string()),
-            primary: parse_color(request.primary_color.as_deref()).unwrap_or(DEFAULT_PRIMARY),
-            secondary: parse_color(request.secondary_color.as_deref()).unwrap_or(DEFAULT_SECONDARY),
+            style: optional_text(&request.style, "panel"),
+            texture: optional_text(&request.texture, "noise"),
+            primary: request_color(request.primary_color.as_deref(), DEFAULT_PRIMARY),
+            secondary: request_color(request.secondary_color.as_deref(), DEFAULT_SECONDARY),
             shadow: request.shadow.unwrap_or(true),
             glow: request.glow.unwrap_or(false),
             emboss: request.emboss.unwrap_or(true),
@@ -194,6 +193,38 @@ impl AssetPlan {
 
         files
     }
+}
+
+struct AssetNames {
+    sprite_name: String,
+    gui_name: String,
+}
+
+impl AssetNames {
+    fn from_request(request: &GenerateGuiGfxAssetRequest) -> Result<Self, String> {
+        let sprite_name = request
+            .sprite_name
+            .clone()
+            .unwrap_or_else(|| format!("GFX_{}", request.asset_name));
+        let gui_name = request
+            .gui_name
+            .clone()
+            .unwrap_or_else(|| request.asset_name.clone());
+        validate_token(&sprite_name, "sprite_name")?;
+        validate_token(&gui_name, "gui_name")?;
+        Ok(Self {
+            sprite_name,
+            gui_name,
+        })
+    }
+}
+
+fn optional_text(value: &Option<String>, default: &str) -> String {
+    value.clone().unwrap_or_else(|| default.to_string())
+}
+
+fn request_color(value: Option<&str>, default: Color) -> Color {
+    parse_color(value).unwrap_or(default)
 }
 
 const DEFAULT_PRIMARY: Color = Color {
@@ -255,341 +286,6 @@ fn text_file(
     }
 }
 
-struct RenderOptions<'a> {
-    width: u32,
-    height: u32,
-    primary: Color,
-    secondary: Color,
-    style: &'a str,
-    texture: &'a str,
-    shadow: bool,
-    glow: bool,
-    emboss: bool,
-}
-
-fn render_asset(options: RenderOptions<'_>) -> Vec<u8> {
-    let pixel_count = (options.width * options.height) as usize;
-    let mut pixels = vec![0u8; pixel_count * 4];
-    let radius = corner_radius(&options);
-
-    for y in 0..options.height {
-        for x in 0..options.width {
-            let color = render_pixel(&options, x, y, radius);
-            let index = ((y * options.width + x) * 4) as usize;
-            pixels[index] = color.red;
-            pixels[index + 1] = color.green;
-            pixels[index + 2] = color.blue;
-            pixels[index + 3] = color.alpha;
-        }
-    }
-
-    pixels
-}
-
-fn corner_radius(options: &RenderOptions<'_>) -> f32 {
-    match options.style {
-        "button" => (options.height as f32 * 0.22).clamp(3.0, 14.0),
-        "badge" => (options.width.min(options.height) as f32) * 0.5,
-        _ => (options.width.min(options.height) as f32 * 0.08).clamp(2.0, 10.0),
-    }
-}
-
-fn render_pixel(options: &RenderOptions<'_>, x: u32, y: u32, radius: f32) -> Color {
-    let fx = normalized_coordinate(x, options.width);
-    let fy = normalized_coordinate(y, options.height);
-    let inside = rounded_rect_contains(
-        x as f32,
-        y as f32,
-        options.width as f32,
-        options.height as f32,
-        radius,
-    );
-
-    if inside {
-        render_inner_pixel(options, x, y, fx, fy, radius)
-    } else if options.shadow || options.glow {
-        render_outer_pixel(options, x, y, radius)
-    } else {
-        TRANSPARENT
-    }
-}
-
-fn normalized_coordinate(value: u32, size: u32) -> f32 {
-    if size <= 1 {
-        0.0
-    } else {
-        value as f32 / (size - 1) as f32
-    }
-}
-
-fn render_inner_pixel(
-    options: &RenderOptions<'_>,
-    x: u32,
-    y: u32,
-    fx: f32,
-    fy: f32,
-    radius: f32,
-) -> Color {
-    let mut color = mix(
-        options.primary,
-        options.secondary,
-        (fx * 0.35 + fy * 0.65).clamp(0.0, 1.0),
-    );
-    apply_texture(&mut color, options.texture, x, y);
-    if options.emboss {
-        apply_emboss(&mut color, fx, fy);
-    }
-    apply_border(&mut color, x, y, options.width, options.height, radius);
-    color
-}
-
-fn render_outer_pixel(options: &RenderOptions<'_>, x: u32, y: u32, radius: f32) -> Color {
-    outer_effect_color(OuterEffectOptions {
-        x: x as f32,
-        y: y as f32,
-        width: options.width as f32,
-        height: options.height as f32,
-        radius,
-        shadow: options.shadow,
-        glow: options.glow,
-        secondary: options.secondary,
-    })
-}
-
-const TRANSPARENT: Color = Color {
-    red: 0,
-    green: 0,
-    blue: 0,
-    alpha: 0,
-};
-
-fn rounded_rect_contains(x: f32, y: f32, width: f32, height: f32, radius: f32) -> bool {
-    if width <= 0.0 || height <= 0.0 {
-        return false;
-    }
-
-    let max_radius = ((width - 1.0).max(0.0).min((height - 1.0).max(0.0))) * 0.5;
-    let radius = radius.clamp(0.0, max_radius);
-    let min_x = radius;
-    let max_x = (width - radius - 1.0).max(min_x);
-    let min_y = radius;
-    let max_y = (height - radius - 1.0).max(min_y);
-    let inner_x = x.clamp(min_x, max_x);
-    let inner_y = y.clamp(min_y, max_y);
-    let dx = x - inner_x;
-    let dy = y - inner_y;
-    dx * dx + dy * dy <= radius * radius
-}
-
-struct OuterEffectOptions {
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-    radius: f32,
-    shadow: bool,
-    glow: bool,
-    secondary: Color,
-}
-
-fn outer_effect_color(options: OuterEffectOptions) -> Color {
-    let shifted_x = if options.shadow {
-        options.x - 2.0
-    } else {
-        options.x
-    };
-    let shifted_y = if options.shadow {
-        options.y - 2.0
-    } else {
-        options.y
-    };
-    let near = rounded_rect_contains(
-        shifted_x,
-        shifted_y,
-        options.width,
-        options.height,
-        options.radius + 2.0,
-    );
-    if options.shadow && near {
-        return Color {
-            red: 0,
-            green: 0,
-            blue: 0,
-            alpha: 75,
-        };
-    }
-
-    if options.glow
-        && rounded_rect_contains(
-            options.x,
-            options.y,
-            options.width,
-            options.height,
-            options.radius + 4.0,
-        )
-    {
-        return Color {
-            red: options.secondary.red,
-            green: options.secondary.green,
-            blue: options.secondary.blue,
-            alpha: 55,
-        };
-    }
-
-    Color {
-        red: 0,
-        green: 0,
-        blue: 0,
-        alpha: 0,
-    }
-}
-
-fn apply_texture(color: &mut Color, texture: &str, x: u32, y: u32) {
-    let noise = pseudo_noise(x, y) as i16 - 128;
-    let delta = match texture {
-        "grid" if x.is_multiple_of(8) || y.is_multiple_of(8) => 18,
-        "brushed" => ((x as i16 % 9) - 4) * 3,
-        "none" => 0,
-        _ => noise / 12,
-    };
-    color.red = add_channel(color.red, delta);
-    color.green = add_channel(color.green, delta);
-    color.blue = add_channel(color.blue, delta);
-}
-
-fn apply_emboss(color: &mut Color, fx: f32, fy: f32) {
-    let delta = if fx + fy < 0.45 {
-        24
-    } else if fx + fy > 1.55 {
-        -24
-    } else {
-        0
-    };
-    color.red = add_channel(color.red, delta);
-    color.green = add_channel(color.green, delta);
-    color.blue = add_channel(color.blue, delta);
-}
-
-fn apply_border(color: &mut Color, x: u32, y: u32, width: u32, height: u32, radius: f32) {
-    let edge = x < 2
-        || y < 2
-        || x + 3 > width
-        || y + 3 > height
-        || !rounded_rect_contains(
-            x as f32,
-            y as f32,
-            width as f32,
-            height as f32,
-            (radius - 2.0).max(1.0),
-        );
-    if edge {
-        color.red = add_channel(color.red, -38);
-        color.green = add_channel(color.green, -38);
-        color.blue = add_channel(color.blue, -38);
-    }
-}
-
-fn pseudo_noise(x: u32, y: u32) -> u8 {
-    let mut value = x
-        .wrapping_mul(1_103_515_245)
-        .wrapping_add(y.wrapping_mul(12_345))
-        .wrapping_add(0x9e37_79b9);
-    value ^= value >> 16;
-    (value & 0xff) as u8
-}
-
-fn add_channel(channel: u8, delta: i16) -> u8 {
-    (channel as i16 + delta).clamp(0, 255) as u8
-}
-
-fn mix(left: Color, right: Color, amount: f32) -> Color {
-    let inverse = 1.0 - amount;
-    Color {
-        red: (left.red as f32 * inverse + right.red as f32 * amount) as u8,
-        green: (left.green as f32 * inverse + right.green as f32 * amount) as u8,
-        blue: (left.blue as f32 * inverse + right.blue as f32 * amount) as u8,
-        alpha: (left.alpha as f32 * inverse + right.alpha as f32 * amount) as u8,
-    }
-}
-
-fn encode_png_rgba(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, String> {
-    if rgba.len() != (width as usize * height as usize * 4) {
-        return Err("rgba buffer length does not match dimensions".to_string());
-    }
-
-    let stride = width as usize * 4;
-    let mut raw = Vec::with_capacity((stride + 1) * height as usize);
-    for row in rgba.chunks(stride) {
-        raw.push(0);
-        raw.extend_from_slice(row);
-    }
-
-    let mut png = Vec::new();
-    png.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]);
-
-    let mut ihdr = Vec::new();
-    ihdr.extend_from_slice(&width.to_be_bytes());
-    ihdr.extend_from_slice(&height.to_be_bytes());
-    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
-    write_png_chunk(&mut png, b"IHDR", &ihdr);
-
-    let zlib = zlib_store(&raw);
-    write_png_chunk(&mut png, b"IDAT", &zlib);
-    write_png_chunk(&mut png, b"IEND", &[]);
-    Ok(png)
-}
-
-fn zlib_store(data: &[u8]) -> Vec<u8> {
-    let mut output = vec![0x78, 0x01];
-    let mut offset = 0usize;
-    while offset < data.len() {
-        let remaining = data.len() - offset;
-        let block_len = remaining.min(65_535);
-        let final_block = offset + block_len >= data.len();
-        output.push(if final_block { 0x01 } else { 0x00 });
-        let len = block_len as u16;
-        output.extend_from_slice(&len.to_le_bytes());
-        output.extend_from_slice(&(!len).to_le_bytes());
-        output.extend_from_slice(&data[offset..offset + block_len]);
-        offset += block_len;
-    }
-    output.extend_from_slice(&adler32(data).to_be_bytes());
-    output
-}
-
-fn write_png_chunk(output: &mut Vec<u8>, chunk_type: &[u8; 4], data: &[u8]) {
-    output.extend_from_slice(&(data.len() as u32).to_be_bytes());
-    output.extend_from_slice(chunk_type);
-    output.extend_from_slice(data);
-    let mut crc_input = Vec::with_capacity(chunk_type.len() + data.len());
-    crc_input.extend_from_slice(chunk_type);
-    crc_input.extend_from_slice(data);
-    output.extend_from_slice(&crc32(&crc_input).to_be_bytes());
-}
-
-fn adler32(data: &[u8]) -> u32 {
-    const MOD: u32 = 65_521;
-    let mut a = 1u32;
-    let mut b = 0u32;
-    for byte in data {
-        a = (a + u32::from(*byte)) % MOD;
-        b = (b + a) % MOD;
-    }
-    (b << 16) | a
-}
-
-fn crc32(data: &[u8]) -> u32 {
-    let mut crc = 0xffff_ffffu32;
-    for byte in data {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            let mask = if crc & 1 == 1 { 0xedb88320 } else { 0 };
-            crc = (crc >> 1) ^ mask;
-        }
-    }
-    !crc
-}
-
 fn generate_svg(
     width: u32,
     height: u32,
@@ -638,23 +334,38 @@ fn generate_gui(gui_name: &str, sprite_name: &str, width: u32, height: u32) -> S
 
 fn write_asset_files(output_root: &str, files: &[GeneratedGuiGfxAssetFile]) -> Result<(), String> {
     for file in files {
-        validate_relative_path(&file.path)?;
-        let path = Path::new(output_root).join(&file.path);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| format!("failed to create {}: {}", parent.display(), error))?;
-        }
-
-        if let Some(text) = &file.text_content {
-            fs::write(&path, text.as_bytes())
-                .map_err(|error| format!("failed to write {}: {}", path.display(), error))?;
-        } else if let Some(content) = &file.content_base64 {
-            let bytes = base64_decode(content)?;
-            fs::write(&path, bytes)
-                .map_err(|error| format!("failed to write {}: {}", path.display(), error))?;
-        }
+        write_asset_file(output_root, file)?;
     }
     Ok(())
+}
+
+fn write_asset_file(output_root: &str, file: &GeneratedGuiGfxAssetFile) -> Result<(), String> {
+    validate_relative_path(&file.path)?;
+    let path = Path::new(output_root).join(&file.path);
+    ensure_parent_directory(&path)?;
+    if let Some(bytes) = asset_file_bytes(file)? {
+        fs::write(&path, bytes)
+            .map_err(|error| format!("failed to write {}: {}", path.display(), error))?;
+    }
+    Ok(())
+}
+
+fn ensure_parent_directory(path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create {}: {}", parent.display(), error))?;
+    }
+    Ok(())
+}
+
+fn asset_file_bytes(file: &GeneratedGuiGfxAssetFile) -> Result<Option<Vec<u8>>, String> {
+    if let Some(text) = &file.text_content {
+        return Ok(Some(text.as_bytes().to_vec()));
+    }
+    file.content_base64
+        .as_deref()
+        .map(base64_decode)
+        .transpose()
 }
 
 fn normalize_asset_directory(directory: Option<&str>) -> Result<String, String> {
@@ -713,7 +424,7 @@ fn parse_color(value: Option<&str>) -> Option<Color> {
     })
 }
 
-fn color_hex(color: Color) -> String {
+pub(super) fn color_hex(color: Color) -> String {
     format!("{:02x}{:02x}{:02x}", color.red, color.green, color.blue)
 }
 
@@ -723,284 +434,4 @@ fn escape_xml(value: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
-}
-
-fn base64_encode(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = String::new();
-    for chunk in bytes.chunks(3) {
-        let first = chunk[0];
-        let second = *chunk.get(1).unwrap_or(&0);
-        let third = *chunk.get(2).unwrap_or(&0);
-        let triple = (u32::from(first) << 16) | (u32::from(second) << 8) | u32::from(third);
-        output.push(TABLE[((triple >> 18) & 0x3f) as usize] as char);
-        output.push(TABLE[((triple >> 12) & 0x3f) as usize] as char);
-        if chunk.len() > 1 {
-            output.push(TABLE[((triple >> 6) & 0x3f) as usize] as char);
-        } else {
-            output.push('=');
-        }
-        if chunk.len() > 2 {
-            output.push(TABLE[(triple & 0x3f) as usize] as char);
-        } else {
-            output.push('=');
-        }
-    }
-    output
-}
-
-fn base64_decode(text: &str) -> Result<Vec<u8>, String> {
-    let mut output = Vec::new();
-    let mut buffer = 0u32;
-    let mut bits = 0u8;
-    for character in text.chars().filter(|character| !character.is_whitespace()) {
-        if character == '=' {
-            break;
-        }
-        let value = base64_value(character)
-            .ok_or_else(|| format!("invalid base64 character `{}`", character))?;
-        buffer = (buffer << 6) | u32::from(value);
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            output.push(((buffer >> bits) & 0xff) as u8);
-        }
-    }
-    Ok(output)
-}
-
-fn base64_value(character: char) -> Option<u8> {
-    match character {
-        'A'..='Z' => Some(character as u8 - b'A'),
-        'a'..='z' => Some(character as u8 - b'a' + 26),
-        '0'..='9' => Some(character as u8 - b'0' + 52),
-        '+' => Some(62),
-        '/' => Some(63),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use super::{GenerateGuiGfxAssetRequest, crc32, generate_gui_gfx_asset};
-    use crate::tools::test_support::unique_test_dir;
-
-    #[test]
-    fn refuses_generation_without_approval() {
-        let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
-            output_root: None,
-            asset_name: "sample_panel".to_string(),
-            sprite_name: None,
-            gui_name: None,
-            width: 96,
-            height: 48,
-            style: Some("button".to_string()),
-            primary_color: Some("#315f8c".to_string()),
-            secondary_color: Some("#c8a75d".to_string()),
-            texture: Some("noise".to_string()),
-            shadow: Some(true),
-            glow: Some(true),
-            emboss: Some(true),
-            write_gui: Some(true),
-            approved: false,
-            dry_run: true,
-            relative_directory: None,
-        })
-        .expect("request should be handled");
-
-        assert!(!result.approved);
-        assert!(!result.files.iter().any(|file| file.kind == "png"));
-        assert!(
-            result
-                .messages
-                .iter()
-                .any(|message| message.contains("approved=true"))
-        );
-    }
-
-    #[test]
-    fn approved_dry_run_returns_png_svg_gfx_and_gui() {
-        let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
-            output_root: None,
-            asset_name: "sample_command_button".to_string(),
-            sprite_name: Some("GFX_sample_command_button".to_string()),
-            gui_name: Some("sample_command_button".to_string()),
-            width: 128,
-            height: 64,
-            style: Some("button".to_string()),
-            primary_color: Some("#214a67".to_string()),
-            secondary_color: Some("#d5b261".to_string()),
-            texture: Some("brushed".to_string()),
-            shadow: Some(true),
-            glow: Some(true),
-            emboss: Some(true),
-            write_gui: Some(true),
-            approved: true,
-            dry_run: true,
-            relative_directory: Some("gfx/interface/sample".to_string()),
-        })
-        .expect("asset generation should complete");
-
-        assert!(result.experimental);
-        assert!(result.dry_run);
-        assert_eq!(result.files.len(), 4);
-        let png = result
-            .files
-            .iter()
-            .find(|file| file.kind == "png")
-            .expect("png should be returned");
-        assert!(
-            png.path
-                .ends_with("gfx/interface/sample/sample_command_button.png")
-        );
-        assert!(
-            png.content_base64
-                .as_ref()
-                .expect("png base64")
-                .starts_with("iVBORw0KGgo")
-        );
-        assert!(result.files.iter().any(|file| {
-            file.kind == "gfx"
-                && file
-                    .text_content
-                    .as_deref()
-                    .unwrap_or("")
-                    .contains("GFX_sample_command_button")
-        }));
-        assert!(result.files.iter().any(|file| {
-            file.kind == "gui"
-                && file
-                    .text_content
-                    .as_deref()
-                    .unwrap_or("")
-                    .contains("quadTextureSprite")
-        }));
-    }
-
-    #[test]
-    fn tiny_asset_size_does_not_panic() {
-        let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
-            output_root: None,
-            asset_name: "sample_tiny".to_string(),
-            sprite_name: None,
-            gui_name: None,
-            width: 1,
-            height: 1,
-            style: Some("button".to_string()),
-            primary_color: Some("#214a67".to_string()),
-            secondary_color: Some("#d5b261".to_string()),
-            texture: Some("none".to_string()),
-            shadow: Some(true),
-            glow: Some(true),
-            emboss: Some(true),
-            write_gui: Some(false),
-            approved: true,
-            dry_run: true,
-            relative_directory: None,
-        })
-        .expect("tiny asset should render safely");
-
-        assert!(result.files.iter().any(|file| file.kind == "png"));
-    }
-
-    #[test]
-    fn rejects_unsafe_asset_directories() {
-        for directory in [
-            "gfx/interface/../evil",
-            "gfx/interface/bad\"path",
-            "gfx/interface/bad\npath",
-            r"gfx\interface\bad",
-        ] {
-            let error = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
-                output_root: None,
-                asset_name: "sample_bad".to_string(),
-                sprite_name: None,
-                gui_name: None,
-                width: 64,
-                height: 64,
-                style: Some("button".to_string()),
-                primary_color: None,
-                secondary_color: None,
-                texture: None,
-                shadow: Some(false),
-                glow: Some(false),
-                emboss: Some(false),
-                write_gui: Some(false),
-                approved: true,
-                dry_run: true,
-                relative_directory: Some(directory.to_string()),
-            })
-            .expect_err("unsafe path should be rejected");
-
-            assert!(error.contains("unsafe relative path"));
-        }
-    }
-
-    #[test]
-    fn uses_relative_directory_for_svg_source_path_and_png_crc() {
-        let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
-            output_root: None,
-            asset_name: "sample_button".to_string(),
-            sprite_name: None,
-            gui_name: None,
-            width: 32,
-            height: 16,
-            style: Some("button".to_string()),
-            primary_color: None,
-            secondary_color: None,
-            texture: None,
-            shadow: Some(false),
-            glow: Some(false),
-            emboss: Some(false),
-            write_gui: Some(false),
-            approved: true,
-            dry_run: true,
-            relative_directory: Some("gfx/interface/custom".to_string()),
-        })
-        .expect("asset should render");
-
-        assert!(result.files.iter().any(|file| {
-            file.kind == "svg" && file.path == "gfx/interface/custom/source/sample_button.svg"
-        }));
-        assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
-    }
-
-    #[test]
-    fn approved_apply_writes_game_files() {
-        let root = unique_test_dir("gui-gfx-asset");
-        let result = generate_gui_gfx_asset(GenerateGuiGfxAssetRequest {
-            output_root: Some(root.to_string_lossy().to_string()),
-            asset_name: "sample_status_panel".to_string(),
-            sprite_name: None,
-            gui_name: None,
-            width: 64,
-            height: 64,
-            style: Some("panel".to_string()),
-            primary_color: Some("#34495e".to_string()),
-            secondary_color: Some("#9f7f3a".to_string()),
-            texture: Some("grid".to_string()),
-            shadow: Some(true),
-            glow: Some(false),
-            emboss: Some(true),
-            write_gui: Some(false),
-            approved: true,
-            dry_run: false,
-            relative_directory: None,
-        })
-        .expect("asset should write");
-
-        assert!(result.applied);
-        assert!(
-            root.join("gfx/interface/rhoiscribe/sample_status_panel.png")
-                .is_file()
-        );
-        assert!(root.join("interface/sample_status_panel.gfx").is_file());
-        let bytes = fs::read(root.join("gfx/interface/rhoiscribe/sample_status_panel.png"))
-            .expect("png should read");
-        assert!(bytes.starts_with(&[0x89, b'P', b'N', b'G']));
-
-        fs::remove_dir_all(root).expect("temp output should clean up");
-    }
 }
