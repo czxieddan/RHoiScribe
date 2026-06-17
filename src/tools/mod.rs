@@ -23,6 +23,7 @@ mod environment;
 mod error_log;
 mod gui_gfx_asset;
 mod hoi4_keys;
+mod mod_skeleton;
 mod paradox_lexer;
 mod project_files;
 mod project_index;
@@ -49,6 +50,7 @@ pub use error_log::{
 pub use gui_gfx_asset::{
     GenerateGuiGfxAssetRequest, GenerateGuiGfxAssetResult, GeneratedGuiGfxAssetFile,
 };
+pub use mod_skeleton::Hoi4ModSkeletonRequest;
 pub use project_index::{IndexedFile, ProjectIndexItem, ProjectIndexRequest, ProjectIndexResult};
 pub use project_repair::{
     FfmpegStatus, RepairChange, RepairCheck, RepairHoi4ProjectRequest, RepairHoi4ProjectResult,
@@ -162,6 +164,13 @@ const TOOL_SPECS: &[ToolSpec] = &[
         description: "Experimentally generate a local procedural HOI4 PNG asset, .gfx sprite registration, and optional .gui files without external image models; writing requires approved=true.",
         required: &["asset_name", "width", "height", "approved", "dry_run"],
         handler: call_generate_gui_gfx_asset,
+    },
+    ToolSpec {
+        name: "setup_hoi4_mod_skeleton",
+        title: "Setup HOI4 mod skeleton",
+        description: "Create an early HOI4 mod skeleton for sparse new projects with descriptor.mod, starter common/events/localisation files, decision category metadata, and core directories. Use this before specialized generators when the workspace lacks common, events, localisation, or other loadable folders. When dry_run=false, provide output_root for the current mod workspace or requested output root.",
+        required: &["mod_name", "dry_run"],
+        handler: call_setup_hoi4_mod_skeleton,
     },
     ToolSpec {
         name: "validate_hoi4_paths",
@@ -642,6 +651,12 @@ impl ToolEngine {
         gui_gfx_asset::generate_gui_gfx_asset(request).map_err(ToolError::InvalidRequest)
     }
 
+    pub fn setup_hoi4_mod_skeleton(
+        request: Hoi4ModSkeletonRequest,
+    ) -> Result<ToolExecutionResult, ToolError> {
+        mod_skeleton::setup_hoi4_mod_skeleton(request)
+    }
+
     pub fn validate_hoi4_paths(request: ValidateHoi4PathsRequest) -> PathValidationResult {
         let mut valid_paths = Vec::new();
         let mut invalid_paths = Vec::new();
@@ -785,6 +800,13 @@ fn call_edit_hoi4_script_file(arguments: JsonObject) -> Result<CallToolResult, T
 fn call_generate_gui_gfx_asset(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<GenerateGuiGfxAssetRequest>(arguments)?;
     Ok(structured_result(ToolEngine::generate_gui_gfx_asset(
+        request,
+    )?))
+}
+
+fn call_setup_hoi4_mod_skeleton(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<Hoi4ModSkeletonRequest>(arguments)?;
+    Ok(structured_result(ToolEngine::setup_hoi4_mod_skeleton(
         request,
     )?))
 }
@@ -962,6 +984,10 @@ fn invalid_path_reason(path: &str) -> Option<String> {
 
     if normalized.contains(':') {
         return Some("path must be relative and must not contain a drive prefix".to_string());
+    }
+
+    if normalized == "descriptor.mod" {
+        return None;
     }
 
     let allowed = [

@@ -21,7 +21,7 @@
         "gfx",
         "localisation"
       ],
-      "body": "A HOI4 mod is a mirror of selected game folders. Generated content should be placed under game-readable directories such as common, events, history, interface, gfx, map, music, sound, and localisation. A batch tool must treat paths as relative to the mod root and reject absolute paths or traversal.",
+      "body": "A HOI4 mod is a mirror of selected game folders. Generated content should be placed under game-readable directories such as common, events, history, interface, gfx, map, music, sound, and localisation. A batch tool must treat paths as relative to the mod root and reject absolute paths or traversal. In an early sparse project that lacks common, events, localisation, interface, or history folders, use setup_hoi4_mod_skeleton in dry-run mode to create a reviewable descriptor, starter events, decision category metadata, UTF-8 BOM localisation, and core directory marker files before specialized generators add detailed content.",
       "syntax_blocks": [
         "common/<system>/<file>.txt",
         "events/<namespace>.txt",
@@ -30,12 +30,14 @@
         "localisation/<language>/<file>_l_<language>.yml"
       ],
       "relationships": [
-        "Descriptor files advertise metadata; replace_path changes load semantics; localisation keys must match script IDs."
+        "Descriptor files advertise metadata; replace_path changes load semantics; localisation keys must match script IDs.",
+        "setup_hoi4_mod_skeleton prepares starter folders before focus, event, decision, GUI, or localisation generators add feature-level content."
       ],
       "validation": [
         "Reject paths outside the mod root.",
         "Prefer stable feature-level filenames.",
-        "Keep generated script and localisation in separate files."
+        "Keep generated script and localisation in separate files.",
+        "For sparse new projects, dry-run the skeleton first and only write it under the confirmed mod root."
       ],
       "source_refs": [
         "https://hoi4.paradoxwikis.com/Modding"
