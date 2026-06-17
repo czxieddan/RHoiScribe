@@ -362,7 +362,7 @@ dependencies = [
 
 [[package]]
 name = "rhoiscribe"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "encoding_rs",
