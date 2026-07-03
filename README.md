@@ -73,6 +73,7 @@ At a high level, it helps agents with:
 - safe edits to existing files while respecting workspace conventions
 - Rchadow-assisted HOI4 debug launch preparation
 - RNMDB-backed cross-IDE agent preferences under `.rhoiscribe`
+- tool-call audit logs with regex-filtered export
 - experimental GUI/GFX asset creation when the user approves new procedural art
 
 The bundled Skill package is the quickest way to give compatible agents local access without editing MCP configuration. For complete functionality and a smoother experience, use the MCP server when your agent supports it.
@@ -127,3 +128,27 @@ Pull requests are welcome for expanding the knowledge catalog, improving example
 <h2 align="center">Attribution</h2>
 
 Projects based on RHoiScribe must include a clear README attribution section. Use the short statement template in [docs/rhoiscribe-attribution.md](docs/rhoiscribe-attribution.md).
+
+<h2 align="center">Acknowledgements</h2>
+
+<div align="center">
+
+<a href="https://github.com/czxieddan/Rchadow"><img align="left" src="https://i.imgur.com/omFtYoT.png" alt="Rchadow" width="95"></a>
+<a href="https://www.gnu.org/licenses/agpl-3.0.html"><img align="right" src="https://i.imgur.com/9hl34Lt.png" alt="GNU AGPLv3" width="95"></a>
+
+<p align="center">
+<h3><strong>Based on Rchadow</strong></h3>
+RHoiScribe uses Rchadow, an embeddable Rust playset and launch library for Hearts of Iron IV tools.<br>
+Rchadow provides playset storage, HOI4 mod discovery, launcher-compatible load file generation, and launch abstractions.
+</p>
+
+<br clear="both">
+
+</div>
+
+<div align="center">
+  <h3>Contributors</h3>
+  <a href="https://github.com/czxieddan/RHoiScribe/graphs/contributors">
+    <img src="https://stg.contrib.rocks/image?repo=czxieddan/RHoiScribe" alt="RHoiScribe contributors">
+  </a>
+</div>

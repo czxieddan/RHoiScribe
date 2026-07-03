@@ -73,6 +73,7 @@ RHoiScribe は agents にローカル HOI4 knowledge layer、reusable prompts、
 - workspace conventions を尊重しながら existing files を安全に編集する
 - Rchadow による HOI4 debug launch 準備
 - RNMDB-backed `.rhoiscribe` による cross-IDE agent preferences
+- tool-call audit logs と regex-filtered export
 - user approval 後に experimental GUI/GFX procedural assets を作成する
 
 Skill package は、MCP configuration を編集せずに compatible agent へローカル機能を渡す最短の方法です。agent が MCP をサポートする場合は、完全な機能とより滑らかな体験のために MCP server を使ってください。
@@ -127,3 +128,27 @@ Knowledge catalog の拡張、examples の改善、生成、検証、project sca
 <h2 align="center">帰属表示</h2>
 
 RHoiScribe をベースにしたプロジェクトは、README に明確な帰属表示セクションを含める必要があります。[rhoiscribe-attribution.md](rhoiscribe-attribution.md) の短いテンプレートを使用できます。
+
+<h2 align="center">謝辞</h2>
+
+<div align="center">
+
+<a href="https://github.com/czxieddan/Rchadow"><img align="left" src="https://i.imgur.com/omFtYoT.png" alt="Rchadow" width="95"></a>
+<a href="https://www.gnu.org/licenses/agpl-3.0.html"><img align="right" src="https://i.imgur.com/9hl34Lt.png" alt="GNU AGPLv3" width="95"></a>
+
+<p align="center">
+<h3><strong>Based on Rchadow</strong></h3>
+RHoiScribe uses Rchadow, an embeddable Rust playset and launch library for Hearts of Iron IV tools.<br>
+Rchadow provides playset storage, HOI4 mod discovery, launcher-compatible load file generation, and launch abstractions.
+</p>
+
+<br clear="both">
+
+</div>
+
+<div align="center">
+  <h3>Contributors</h3>
+  <a href="https://github.com/czxieddan/RHoiScribe/graphs/contributors">
+    <img src="https://stg.contrib.rocks/image?repo=czxieddan/RHoiScribe" alt="RHoiScribe contributors">
+  </a>
+</div>

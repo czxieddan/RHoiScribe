@@ -154,19 +154,19 @@ pub fn delete_agent_preference(
     })
 }
 
-fn preference_store_path(store_path: Option<&str>) -> PathBuf {
+pub(crate) fn preference_store_path(store_path: Option<&str>) -> PathBuf {
     store_path
         .map(|path| PathBuf::from(path.trim().trim_matches('"')))
         .unwrap_or_else(|| default_rhoiscribe_dir().join("preferences.rnmdb"))
 }
 
-struct PreferenceMutationLock {
+pub(crate) struct PreferenceMutationLock {
     path: PathBuf,
     _file: File,
 }
 
 impl PreferenceMutationLock {
-    fn acquire(store_path: &Path) -> Result<Self, String> {
+    pub(crate) fn acquire(store_path: &Path) -> Result<Self, String> {
         let path = preference_lock_path(store_path);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -221,7 +221,7 @@ fn remove_stale_lock(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn open_preference_store(path: &Path) -> Result<RnmdbSingleFilePageStore, String> {
+pub(crate) fn open_preference_store(path: &Path) -> Result<RnmdbSingleFilePageStore, String> {
     RnmdbSingleFilePageStore::open_or_create(path, DEFAULT_RNMDB_PAGE_SIZE_BYTES)
 }
 

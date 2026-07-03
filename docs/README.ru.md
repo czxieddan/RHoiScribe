@@ -73,6 +73,7 @@ RHoiScribe дает agents локальный слой знаний HOI4, reusab
 - безопасным редактированием существующих файлов с учетом workspace conventions
 - подготовкой debug launch для HOI4 через Rchadow
 - cross-IDE agent preferences в `.rhoiscribe` через RNMDB
+- audit logs вызовов tools с regex-filtered export
 - experimental GUI/GFX asset creation после user approval на новую procedural art
 
 Skill package — самый быстрый способ дать совместимому agent локальный доступ без изменения MCP configuration. Для полной функциональности и более плавной работы используйте MCP server, если ваш agent поддерживает MCP.
@@ -127,3 +128,27 @@ Pull requests приветствуются для расширения knowledge
 <h2 align="center">Указание основы</h2>
 
 Проекты, основанные на RHoiScribe, должны включать в README явный раздел с указанием основы. Можно использовать короткий шаблон из [rhoiscribe-attribution.md](rhoiscribe-attribution.md).
+
+<h2 align="center">Благодарности</h2>
+
+<div align="center">
+
+<a href="https://github.com/czxieddan/Rchadow"><img align="left" src="https://i.imgur.com/omFtYoT.png" alt="Rchadow" width="95"></a>
+<a href="https://www.gnu.org/licenses/agpl-3.0.html"><img align="right" src="https://i.imgur.com/9hl34Lt.png" alt="GNU AGPLv3" width="95"></a>
+
+<p align="center">
+<h3><strong>Based on Rchadow</strong></h3>
+RHoiScribe uses Rchadow, an embeddable Rust playset and launch library for Hearts of Iron IV tools.<br>
+Rchadow provides playset storage, HOI4 mod discovery, launcher-compatible load file generation, and launch abstractions.
+</p>
+
+<br clear="both">
+
+</div>
+
+<div align="center">
+  <h3>Contributors</h3>
+  <a href="https://github.com/czxieddan/RHoiScribe/graphs/contributors">
+    <img src="https://stg.contrib.rocks/image?repo=czxieddan/RHoiScribe" alt="RHoiScribe contributors">
+  </a>
+</div>

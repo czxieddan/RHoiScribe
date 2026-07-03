@@ -33,6 +33,13 @@ pub enum CliCommand {
     Help,
     Version,
     PrintCommand,
+    Logs {
+        pattern: Option<String>,
+    },
+    ExportLogs {
+        output_path: String,
+        pattern: Option<String>,
+    },
     Skill(SkillCliCommand),
 }
 
@@ -58,6 +65,18 @@ where
 fn parse_rest(rest: &[String]) -> Result<CliCommand, CliError> {
     match rest {
         [] => Ok(CliCommand::Serve),
+        [flag] if flag == "--logs" => Ok(CliCommand::Logs { pattern: None }),
+        [flag, pattern] if flag == "--logs" => Ok(CliCommand::Logs {
+            pattern: Some(pattern.clone()),
+        }),
+        [flag, output_path] if flag == "--export-logs" => Ok(CliCommand::ExportLogs {
+            output_path: output_path.clone(),
+            pattern: None,
+        }),
+        [flag, output_path, pattern] if flag == "--export-logs" => Ok(CliCommand::ExportLogs {
+            output_path: output_path.clone(),
+            pattern: Some(pattern.clone()),
+        }),
         [flag] => parse_single_flag(flag),
         [flag, skill_args @ ..] if flag == "--skill" => parse_skill_args(skill_args),
         [argument, ..] => Err(CliError {
@@ -178,6 +197,9 @@ Usage:\n\
   rhoiscribe                  Run the MCP server over stdio\n\
   rhoiscribe --print-command  Print the absolute command path for MCP config\n\
   rhoiscribe --mcp-command    Alias for --print-command\n\
+  rhoiscribe --logs [REGEX]   Print recent tool logs as JSON\n\
+  rhoiscribe --export-logs <PATH> [REGEX]\n\
+                              Export matching tool logs as JSON\n\
   rhoiscribe --skill list-tools\n\
   rhoiscribe --skill list-resources\n\
   rhoiscribe --skill list-prompts\n\

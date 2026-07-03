@@ -35,6 +35,32 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", rhoiscribe::cli::command_path_for_mcp_json()?);
             Ok(())
         }
+        rhoiscribe::cli::CliCommand::Logs { pattern } => {
+            let result = rhoiscribe::tools::ToolEngine::query_tool_logs(
+                rhoiscribe::tools::ToolLogQueryRequest {
+                    store_path: None,
+                    pattern,
+                    limit: Some(100),
+                },
+            )?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+            Ok(())
+        }
+        rhoiscribe::cli::CliCommand::ExportLogs {
+            output_path,
+            pattern,
+        } => {
+            let result = rhoiscribe::tools::ToolEngine::export_tool_logs(
+                rhoiscribe::tools::ToolLogExportRequest {
+                    store_path: None,
+                    output_path,
+                    pattern,
+                    limit: None,
+                },
+            )?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+            Ok(())
+        }
         rhoiscribe::cli::CliCommand::Skill(command) => {
             println!("{}", rhoiscribe::skill::execute_skill_command(command)?);
             Ok(())

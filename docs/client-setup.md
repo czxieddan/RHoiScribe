@@ -173,7 +173,19 @@ Windows clients usually need the `.exe` path and escaped backslashes in JSON:
 - Debug preflight: `validate_hoi4_debug_run` checks launcher descriptors, playset state, clean document folders, and can optionally launch `hoi4.exe -gdpr-compliant -debug_mode`.
 - Rchadow debug launch: `launch_hoi4_debug_with_rchadow` can prepare a debug playset, choose memory or disk mode, and optionally start HOI4 through Rchadow.
 - Agent preferences: `list_agent_preferences`, `set_agent_preference`, and `delete_agent_preference` persist cross-IDE habits in an RNMDB-backed `.rhoiscribe` store.
+- Tool logs: `query_tool_logs` and `export_tool_logs` read recent tool calls from the same RNMDB-backed `.rhoiscribe` store as agent preferences, with optional regex filtering.
 - Log triage: `classify_error_log` groups `error.log` entries by likely HOI4 subsystem and can correlate entries with changed mod-relative paths.
+
+## Direct Log Access
+
+The executable can inspect the same tool logs without starting an MCP session:
+
+```powershell
+.\rhoiscribe-windows-x86_64.exe --logs "generate_.*"
+.\rhoiscribe-windows-x86_64.exe --export-logs rhoiscribe-tool-logs.json "error|failed"
+```
+
+Linux and macOS use the same arguments on their downloaded binaries.
 
 ## Smoke Test
 
