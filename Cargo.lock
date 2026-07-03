@@ -584,6 +584,7 @@ checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 [[package]]
 name = "rchadow"
 version = "0.1.0"
+source = "git+https://github.com/czxieddan/Rchadow.git?rev=ed0030084a56dd0ef6768843a739c6c10ec69316#ed0030084a56dd0ef6768843a739c6c10ec69316"
 dependencies = [
  "chrono",
  "directories",
@@ -680,10 +681,12 @@ dependencies = [
 [[package]]
 name = "rnmdb-common"
 version = "0.1.0"
+source = "git+https://github.com/czxieddan/RNovModularDB.git?rev=a7a2b5fdc125b1e0b4f3628c25b09dc84d4ab2c6#a7a2b5fdc125b1e0b4f3628c25b09dc84d4ab2c6"
 
 [[package]]
 name = "rnmdb-storage"
 version = "0.1.0"
+source = "git+https://github.com/czxieddan/RNovModularDB.git?rev=a7a2b5fdc125b1e0b4f3628c25b09dc84d4ab2c6#a7a2b5fdc125b1e0b4f3628c25b09dc84d4ab2c6"
 dependencies = [
  "chacha20poly1305",
  "rnmdb-common",

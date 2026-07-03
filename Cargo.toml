@@ -8,9 +8,9 @@ build = "build.rs"
 [dependencies]
 anyhow = "1.0.102"
 encoding_rs = "0.8.35"
-rchadow = { path = "vendor/Rchadow", features = ["rnmdb"] }
-rnmdb-common = { path = "vendor/RNovModularDB/crates/rnmdb-common" }
-rnmdb-storage = { path = "vendor/RNovModularDB/crates/rnmdb-storage" }
+rchadow = { git = "https://github.com/czxieddan/Rchadow.git", rev = "ed0030084a56dd0ef6768843a739c6c10ec69316", features = ["rnmdb"] }
+rnmdb-common = { git = "https://github.com/czxieddan/RNovModularDB.git", rev = "a7a2b5fdc125b1e0b4f3628c25b09dc84d4ab2c6" }
+rnmdb-storage = { git = "https://github.com/czxieddan/RNovModularDB.git", rev = "a7a2b5fdc125b1e0b4f3628c25b09dc84d4ab2c6" }
 rmcp = { version = "1.7.0", features = ["server", "transport-io"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
