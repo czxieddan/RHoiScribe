@@ -1,0 +1,43 @@
+id = "script.scopes"
+
+title = "Scopes and scope transitions"
+
+category = "script"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "ROOT",
+    "THIS",
+    "FROM",
+    "PREV",
+    "country",
+    "state",
+    "character",
+    "unit"
+]
+
+body = "Scopes determine what an effect or trigger reads. ROOT, THIS, FROM, and PREV can change meaning inside nested blocks. Generated chains must explicitly understand whether they are operating on a country, state, character, unit leader, strategic region, or array element."
+
+syntax_blocks = [
+    "ROOT = { add_political_power = 50 }",
+    "FROM = { country_event = my_event.1 }",
+    "random_owned_state = { add_building_construction = { type = industrial_complex level = 1 instant_build = yes } }"
+]
+
+relationships = [
+    "Effects and triggers are valid only in compatible scopes.",
+    "Events and on_actions often introduce FROM or ROOT relationships."
+]
+
+validation = [
+    "Annotate expected root scope in generated plans.",
+    "Do not nest country-only effects inside state scopes without transition.",
+    "Use temporary variables for complex scope calculations."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Scopes"
+]

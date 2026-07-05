@@ -1,0 +1,38 @@
+id = "ai.ai_strategy"
+
+title = "AI strategies and scripted AI behavior"
+
+category = "ai"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "ai_strategy",
+    "ai_will_do",
+    "ai_focus",
+    "strategy"
+]
+
+body = "AI strategy files and ai_will_do blocks steer how AI countries pick focuses, decisions, diplomacy, production, and plans. Generated AI logic should be conservative and debuggable."
+
+syntax_blocks = [
+    "ai_will_do = { factor = 1 modifier = { factor = 0 has_war = yes } }",
+    "ai_strategy = { type = conquer id = TAG value = 50 }"
+]
+
+relationships = [
+    "Focuses and decisions use ai_will_do.",
+    "Country AI strategies interact with diplomacy and war goals."
+]
+
+validation = [
+    "Avoid unconditional extreme factors.",
+    "Gate AI behavior by tag or situation.",
+    "Test AI-only runs."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/AI_modding"
+]

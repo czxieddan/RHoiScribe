@@ -1,0 +1,47 @@
+id = "on_actions.politics_peace"
+
+title = "On action politics, elections, and peace conference hooks"
+
+category = "on_actions"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "on_stage_coup",
+    "on_coup_succeeded",
+    "on_government_change",
+    "on_ruling_party_change",
+    "on_new_term_election",
+    "on_before_peace_conference_start",
+    "on_peaceconference_started",
+    "on_peaceconference_ended",
+    "old_ideology_token"
+]
+
+body = "Politics hooks: on_stage_coup has ROOT as the country staging the coup and FROM as the target. on_coup_succeeded has ROOT as the country where the coup succeeds and FROM as the coup stager. on_government_change fires when a country changes government and also triggers on_ruling_party_change. on_ruling_party_change fires when ideology changes and exposes old_ideology_token as a temporary token variable. on_new_term_election fires for election events or hold_election. Peace hooks: on_before_peace_conference_start runs after capitulation but before the peace conference and is called for winner/loser pairs. on_peaceconference_started and on_peaceconference_ended use ROOT as winner and FROM as loser; they can also be triggered by white peace or conditional surrender paths."
+
+syntax_blocks = [
+    "on_stage_coup = { effect = { # ROOT: coup stager; FROM: target country } }",
+    "on_coup_succeeded = { effect = { # ROOT: coup country; FROM: coup stager } }",
+    "on_ruling_party_change = { effect = { set_country_flag = my_mod_ideology_changed } }",
+    "on_new_term_election = { random_events = { 100 = my_mod_election.1 } }",
+    "on_before_peace_conference_start = { effect = { # ROOT: winner; FROM: loser } }"
+]
+
+relationships = [
+    "on_government_change and on_ruling_party_change can both fire for the same political transition.",
+    "old_ideology_token is useful for generated branching after ideology changes.",
+    "Peace conference hooks operate on winner/loser pairs rather than a single global peace context."
+]
+
+validation = [
+    "Avoid running the same reward in both on_government_change and on_ruling_party_change without a flag gate.",
+    "Document whether a peace hook should affect winner, loser, or both.",
+    "When using random_events for elections, ensure each event trigger is valid in the country scope."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/On_actions"
+]

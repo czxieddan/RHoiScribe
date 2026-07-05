@@ -1,0 +1,42 @@
+id = "sound.music"
+
+title = "Sound, music, and asset registration"
+
+category = "audio"
+
+file_types = [
+    "asset",
+    "txt",
+    "ogg",
+    "wav"
+]
+
+tags = [
+    "music",
+    "sound",
+    "asset",
+    "audio"
+]
+
+body = "Audio modding registers music, sound effects, and asset files. Generated references should keep file paths relative, include required metadata, and avoid replacing vanilla audio unintentionally."
+
+syntax_blocks = [
+    "music = { song = { name = my_song file = \"my_song.ogg\" } }",
+    "sound = { name = my_sound file = \"sound/my_sound.wav\" }"
+]
+
+relationships = [
+    "Events and GUI can trigger sounds.",
+    "Music stations need localisation and asset files."
+]
+
+validation = [
+    "Check audio files exist.",
+    "Use supported formats.",
+    "Avoid duplicate sound names."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Music_modding",
+    "https://hoi4.paradoxwikis.com/Sound_modding"
+]

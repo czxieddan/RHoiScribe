@@ -1,0 +1,41 @@
+id = "characters.leaders_advisors"
+
+title = "Characters, leaders, advisors, and roles"
+
+category = "character"
+
+file_types = [
+    "txt",
+    "yml",
+    "asset"
+]
+
+tags = [
+    "character",
+    "country_leader",
+    "advisor",
+    "corps_commander",
+    "navy_leader"
+]
+
+body = "Characters define political leaders, advisors, field marshals, corps commanders, navy leaders, and other roles. Generated characters need portraits, traits, ideology, country ownership, and recruitment or history integration."
+
+syntax_blocks = [
+    "characters = { my_character = { name = my_character_name portraits = { civilian = { large = GFX_portrait_my_character } } country_leader = { ideology = neutrality traits = { } } } }"
+]
+
+relationships = [
+    "Ideas can reference character advisors.",
+    "History files recruit or set leaders.",
+    "Traits provide modifiers."
+]
+
+validation = [
+    "Ensure portrait GFX exists.",
+    "Use valid role block.",
+    "Localise character names."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Character_modding"
+]

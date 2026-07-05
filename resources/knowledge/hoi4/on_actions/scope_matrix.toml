@@ -1,0 +1,51 @@
+id = "on_actions.scope_matrix"
+
+title = "On action hook families and scope matrix"
+
+category = "on_actions"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "on_actions",
+    "THIS",
+    "ROOT",
+    "FROM",
+    "FROM.FROM",
+    "PREV",
+    "OWNER",
+    "scope_matrix",
+    "hook_families"
+]
+
+body = "This index links detailed on_action families. THIS, ROOT, FROM, FROM.FROM, PREV, and OWNER are hook-specific and cannot be assigned one global meaning. General and pulse hooks: on_startup, on_daily, on_daily_TAG, on_weekly, on_weekly_TAG, on_monthly, on_monthly_TAG. Politics and peace hooks: on_stage_coup, on_coup_succeeded, on_government_change, on_ruling_party_change, on_new_term_election, on_before_peace_conference_start, on_peaceconference_started, on_peaceconference_ended. Diplomacy and war hooks: on_send_volunteers, on_border_war_lost, on_war_relation_added, on_declare_war, on_war, on_peace, on_capitulation, on_capitulation_immediate, on_uncapitulation, on_annex, on_civil_war_end_before_annexation, on_civil_war_end, on_puppet, on_liberate, on_release_as_free, on_release_as_puppet, on_guarantee, on_military_access, on_offer_military_access, on_call_allies, on_join_allies, on_lend_lease, on_incoming_lend_lease, on_send_expeditionary_force, on_return_expeditionary_forces, on_request_expeditionary_forces, on_ask_for_state_control, on_give_state_control, on_peace_proposal, on_send_attache. Faction/autonomy/exile hooks, state/wargoal hooks, unit leader/military/ace hooks, and La Resistance/MIO hooks are listed in their own topics."
+
+syntax_blocks = [
+    "Read rhoiscribe://hoi4/knowledge/on_actions.general_pulses",
+    "Read rhoiscribe://hoi4/knowledge/on_actions.politics_peace",
+    "Read rhoiscribe://hoi4/knowledge/on_actions.diplomacy_war",
+    "Read rhoiscribe://hoi4/knowledge/on_actions.faction_autonomy_exile",
+    "Read rhoiscribe://hoi4/knowledge/on_actions.states_wargoals",
+    "Read rhoiscribe://hoi4/knowledge/on_actions.unit_leader_military_aces",
+    "Read rhoiscribe://hoi4/knowledge/on_actions.laresistance_mio"
+]
+
+relationships = [
+    "THIS, ROOT, FROM, FROM.FROM, PREV, OWNER are hook-specific and must be documented per generated hook.",
+    "random_events inherits the on_action scope chain for event trigger evaluation.",
+    "on_state_control_changed is the common example where ROOT is new controller, FROM is old controller, and FROM.FROM is the state.",
+    "on_naval_invasion and on_paradrop are examples where THIS is not ROOT."
+]
+
+validation = [
+    "Before generating any OA file, write the hook name, category, default scope, ROOT, FROM, FROM.FROM, PREV, and OWNER assumptions when applicable.",
+    "If a hook is absent from this local snapshot, do not invent scope meaning; require current-game documentation lookup.",
+    "Avoid replacing vanilla on_actions files; create mod-prefixed files under common/on_actions/.",
+    "Use scripted_effects for repeated OA payloads so scope assumptions are reviewed once."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/On_actions"
+]

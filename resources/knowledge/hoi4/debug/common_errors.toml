@@ -1,0 +1,54 @@
+id = "debug.common_errors"
+
+title = "Common generation and loading errors"
+
+category = "debug"
+
+file_types = [
+    "txt",
+    "gui",
+    "gfx",
+    "yml",
+    "log"
+]
+
+tags = [
+    "error_log",
+    "braces",
+    "paths",
+    "scope",
+    "ROOT",
+    "THIS",
+    "PREV",
+    "encoding"
+]
+
+body = "Common generated-file failures include missing braces, extra equals signs, wrong folders, missing localisation BOM, mismatched GFX names, invalid scope assumptions, duplicate IDs, missing assets, and hidden vanilla content caused by replace_path. RHoiScribe can classify error.log into subsystems and connect messages to changed paths. For crash or load-failure debugging, summarize the error categories first, then inspect only likely changed files instead of blindly rewriting the mod."
+
+syntax_blocks = [
+    "logs/error.log",
+    "logs/setup.log",
+    "logs/map.log",
+    "classify_error_log { error_log_path = \"<HOI4_DOCUMENT_PATH>/logs/error.log\" changed_paths = [\"common/national_focus/TAG.txt\"] }",
+    "validate_hoi4_debug_run { game_path = \"<GAME_PATH>\" document_path = \"<HOI4_DOCUMENT_PATH>\" workspace_mod_path = \"<MOD_ROOT>\" launch = false }"
+]
+
+relationships = [
+    "Every generator should surface path, ID, encoding, and scope assumptions.",
+    "Error logs should guide targeted fixes instead of blind regeneration.",
+    "Debug launch checks should run before starting hoi4.exe with -gdpr-compliant -debug_mode."
+]
+
+validation = [
+    "Run game with debug logs for release-critical content.",
+    "Search error.log by generated prefix.",
+    "Check localisation and GFX names when UI text or sprites are missing.",
+    "Classify error.log before proposing fixes after a crash.",
+    "Use git diff or status only to analyze which generated files changed unless the user permits modifications.",
+    "Before debug launch, confirm the document map, localisation, and history folders are empty so nudge output or stale files do not contaminate the run."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Troubleshooting",
+    "https://hoi4.paradoxwikis.com/Modding"
+]

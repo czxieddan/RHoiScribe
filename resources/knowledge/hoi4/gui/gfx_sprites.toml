@@ -1,0 +1,47 @@
+id = "gui.gfx_sprites"
+
+title = "GUI layout and GFX sprite registration"
+
+category = "gui"
+
+file_types = [
+    "gui",
+    "gfx",
+    "png",
+    "dds",
+    "tga"
+]
+
+tags = [
+    "containerWindowType",
+    "buttonType",
+    "iconType",
+    "spriteType",
+    "frameAnimatedSpriteType",
+    "GFX"
+]
+
+body = "GUI layout files define windows and controls; GFX files register sprites and images. Generated GUI must keep element names, scripted_gui references, GFX names, and asset paths aligned. Static images usually use spriteType, while animated sprite sheets use frameAnimatedSpriteType with texturefile, frame count, frame rate, and looping metadata that match the existing project style. Do not replace an animated GUI need with a static spriteType unless the user accepts losing animation."
+
+syntax_blocks = [
+    "containerWindowType = { name = \"my_window\" position = { x = 0 y = 0 } }",
+    "spriteType = { name = \"GFX_my_sprite\" texturefile = \"gfx/interface/my_mod/my_sprite.png\" }",
+    "frameAnimatedSpriteType = { name = \"GFX_my_spinner\" texturefile = \"gfx/interface/my_mod/my_spinner.dds\" noOfFrames = 12 animation_rate_fps = 24 looping = yes }"
+]
+
+relationships = [
+    "Scripted GUI triggers/effects/properties reference GUI element names.",
+    "Localisation provides text for textboxes."
+]
+
+validation = [
+    "Check GFX_ names match.",
+    "Use frameAnimatedSpriteType for animated sprite sheets and verify the frame metadata matches the asset.",
+    "Check asset path exists.",
+    "Avoid overlapping UI positions.",
+    "Generated comments should be in clear English and explain only non-obvious logic."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Interface_modding"
+]

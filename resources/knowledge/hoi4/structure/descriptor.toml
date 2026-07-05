@@ -1,0 +1,41 @@
+id = "structure.descriptor"
+
+title = "descriptor.mod and launcher metadata"
+
+category = "structure"
+
+file_types = [
+    "mod"
+]
+
+tags = [
+    "descriptor",
+    "supported_version",
+    "replace_path",
+    "dependencies",
+    "tags"
+]
+
+body = "The descriptor controls launcher metadata, supported version, tags, dependencies, and optional path replacement. Generators should not add replace_path unless the user explicitly wants to replace an entire vanilla folder, because it can hide vanilla content."
+
+syntax_blocks = [
+    "name=\"Example Mod\"",
+    "supported_version=\"1.19.*\"",
+    "dependencies={ \"Required Mod\" }",
+    "replace_path=\"common/ideas\""
+]
+
+relationships = [
+    "replace_path affects every generated file in the replaced folder.",
+    "supported_version relates to latest-update resources."
+]
+
+validation = [
+    "Warn on replace_path by default.",
+    "Keep descriptor strings quoted.",
+    "Do not infer Steam workshop metadata unless provided."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Modding"
+]

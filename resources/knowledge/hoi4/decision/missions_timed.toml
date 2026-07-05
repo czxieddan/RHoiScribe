@@ -1,0 +1,40 @@
+id = "decision.missions_timed"
+
+title = "Missions, timers, and recurring decisions"
+
+category = "decision"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "mission",
+    "days_mission_timeout",
+    "days_remove",
+    "timeout_effect",
+    "cancel_trigger"
+]
+
+body = "Timed decisions and missions run after a duration or disappear after conditions change. They need clear timeout, cancellation, and repeat semantics so generated content does not loop or disappear unexpectedly."
+
+syntax_blocks = [
+    "days_mission_timeout = 30",
+    "timeout_effect = { country_event = my_mod.4 }",
+    "cancel_trigger = { has_war = no }"
+]
+
+relationships = [
+    "Timed decisions often drive event chains.",
+    "AI behavior controls repeated use."
+]
+
+validation = [
+    "Define timeout behavior.",
+    "Avoid repeatable cost exploits.",
+    "Use flags or variables for chain state."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Decision_modding"
+]

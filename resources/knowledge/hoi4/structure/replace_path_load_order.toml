@@ -1,0 +1,40 @@
+id = "structure.replace_path_load_order"
+
+title = "Load order, replace_path, and file precedence"
+
+category = "structure"
+
+file_types = [
+    "mod",
+    "txt",
+    "gui",
+    "gfx"
+]
+
+tags = [
+    "load_order",
+    "replace_path",
+    "overwrite",
+    "compatibility"
+]
+
+body = "HOI4 loads multiple files in many folders, while some folders or filenames effectively override content. replace_path is a descriptor-level override and should be treated as high risk. Generated files should minimize conflicts by using unique IDs and mod-specific filenames."
+
+syntax_blocks = [
+    "replace_path=\"history/states\"",
+    "common/ideas/MODNAME_ideas.txt"
+]
+
+relationships = [
+    "Conflicts are often visible in error.log or by missing vanilla content.",
+    "Namespace and ID strategy reduce conflicts."
+]
+
+validation = [
+    "Avoid writing generic filenames like 00_common.txt unless intentionally overriding.",
+    "Use mod prefixes for generated IDs."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Modding"
+]

@@ -1,0 +1,16 @@
+id = "hoi4.latest_update"
+
+title = "HOI4 latest update snapshot"
+
+category = "updates"
+
+snapshot_date = "2026-07-05"
+
+body = "# HOI4 Latest Update Snapshot\n\nSnapshot date: 2026-07-05\n\nThis local snapshot is based on official Steam and Paradox announcements plus the maintainer-provided local game version evidence visible on 2026-07-05. It is intentionally static so RHoiScribe can serve MCP resources without runtime network access.\n\n## Latest Visible Update\n\n- Current observed build: Operation Postern v1.19.2.0.a729\n- Current observed checksum: d245\n- Current observed date: 2026-07-05\n- Major update: 1.19.0 Patch Notes\n- Patch notes published: 2026-06-10\n- Expansion release: Thunder at Our Gates\n- Expansion release date: 2026-06-11\n- Hotfix: 1.19.0.1\n- Hotfix visible: 2026-06-12\n- Source: official Steam News and Paradox announcements for Hearts of Iron IV, plus maintainer-provided local game version screenshot for the 1.19.2 build string\n\n## Modding-Relevant Notes\n\n- Treat 1.19.2 on the 1.19 branch as the current observed compatibility target for new release-critical work unless the user's installed `launcher-settings.json` reports another version.\n- Use `supported_version=\"1.19.*\"` only when the mod has actually been checked against the 1.19 branch.\n- Thunder at Our Gates shipped alongside the 1.19 update, so agents should expect DLC-adjacent script, focus, country, and UI changes when comparing against older 1.18 assumptions.\n- Operation Postern v1.19.2.0.a729 (d245) means error logs, validation runs, and game behavior should be checked against the user's installed patch before final release packaging.\n\n## Agent Guidance\n\n- Treat this as a local snapshot, not a live current-version guarantee.\n- Prefer local syntax resources for generation.\n- Read `launcher-settings.json` through `discover_hoi4_environment` when local version accuracy matters.\n- When exact current patch compatibility matters, refresh this file from official Paradox or Steam sources before generating release-critical mod content.\n\n## Source References\n\n- https://steamcommunity.com/games/394360/announcements/detail/712277443918955865\n- https://steamcommunity.com/app/394360/announcements\n- https://forum.paradoxplaza.com/forum/forums/hearts-of-iron-iv.844/\n- Maintainer-provided local game version screenshot: Operation Postern v1.19.2.0.a729 (d245), observed 2026-07-05\n"
+
+source_refs = [
+    "https://steamcommunity.com/games/394360/announcements/detail/712277443918955865",
+    "https://steamcommunity.com/app/394360/announcements",
+    "https://forum.paradoxplaza.com/forum/forums/hearts-of-iron-iv.844/",
+    "Maintainer-provided local game version screenshot: Operation Postern v1.19.2.0.a729 (d245), observed 2026-07-05"
+]

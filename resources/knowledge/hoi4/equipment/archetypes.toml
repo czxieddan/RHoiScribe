@@ -1,0 +1,41 @@
+id = "equipment.archetypes"
+
+title = "Equipment archetypes and variants"
+
+category = "equipment"
+
+file_types = [
+    "txt",
+    "gfx",
+    "yml"
+]
+
+tags = [
+    "equipment",
+    "archetype",
+    "variant",
+    "build_cost_ic",
+    "interface_category"
+]
+
+body = "Equipment files define archetypes, concrete equipment, stats, build cost, year, parent relationships, and interface category. Generated equipment must be unlocked by tech or history and referenced by units or OOB."
+
+syntax_blocks = [
+    "equipments = { my_equipment = { year = 1936 archetype = infantry_equipment build_cost_ic = 0.5 } }"
+]
+
+relationships = [
+    "Technologies unlock equipment.",
+    "OOB and units consume equipment.",
+    "GFX and localisation expose equipment to UI."
+]
+
+validation = [
+    "Check archetype exists.",
+    "Use plausible year.",
+    "Add localisation and icons."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Equipment_modding"
+]

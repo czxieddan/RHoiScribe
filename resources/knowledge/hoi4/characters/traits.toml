@@ -1,0 +1,39 @@
+id = "characters.traits"
+
+title = "Leader and advisor traits"
+
+category = "character"
+
+file_types = [
+    "txt",
+    "yml"
+]
+
+tags = [
+    "traits",
+    "leader_traits",
+    "advisor_traits",
+    "modifier"
+]
+
+body = "Traits define modifiers and constraints for leaders, generals, admirals, and advisors. Generated traits should be tied to the correct character role and should not reuse vanilla IDs unless intentionally modifying them."
+
+syntax_blocks = [
+    "leader_traits = { my_trait = { modifier = { army_org_factor = 0.05 } } }"
+]
+
+relationships = [
+    "Traits are assigned inside character role blocks.",
+    "Trait modifiers share modifier scope rules."
+]
+
+validation = [
+    "Use role-compatible trait files.",
+    "Localise trait name and description.",
+    "Check modifier keys."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Character_modding",
+    "https://hoi4.paradoxwikis.com/Modifiers"
+]

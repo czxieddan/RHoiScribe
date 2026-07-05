@@ -1,0 +1,54 @@
+id = "gui.experimental_asset_pipeline"
+
+title = "Experimental procedural GUI/GFX asset pipeline"
+
+category = "gui"
+
+file_types = [
+    "png",
+    "svg",
+    "gfx",
+    "gui"
+]
+
+tags = [
+    "generate_gui_gfx_asset",
+    "approved=true",
+    "procedural_png",
+    "spriteType",
+    "frameAnimatedSpriteType",
+    "quadTextureSprite",
+    "experimental",
+    "no_external_image_models"
+]
+
+body = "generate_gui_gfx_asset is an experimental local pipeline for making HOI4 interface assets when existing project art is not enough and the user approves new generated assets. It does not depend on external image models. The tool procedurally renders a PNG, returns an editable SVG approximation, writes a .gfx spriteType registration, and can also produce an optional .gui file. Static generated assets normally register through spriteType. Animated UI work should use frameAnimatedSpriteType knowledge and existing sprite-sheet conventions; do not claim the procedural PNG pipeline has produced animation unless the generated files and metadata actually define frames. Agents should prefer existing workspace art first, ask before creating new visual assets, and pass approved=true only after user approval."
+
+syntax_blocks = [
+    "generate_gui_gfx_asset { asset_name = \"TAG_command_button\" sprite_name = \"GFX_TAG_command_button\" width = 128 height = 64 style = \"button\" approved = true dry_run = true }",
+    "spriteType = { name = \"GFX_TAG_command_button\" texturefile = \"gfx/interface/TAG/TAG_command_button.png\" }",
+    "frameAnimatedSpriteType = { name = \"GFX_TAG_spinner\" texturefile = \"gfx/interface/TAG/TAG_spinner.dds\" noOfFrames = 8 animation_rate_fps = 16 looping = yes }",
+    "iconType = { name = \"TAG_command_button\" quadTextureSprite = \"GFX_TAG_command_button\" }"
+]
+
+relationships = [
+    "GUI layout consumes sprite names through quadTextureSprite, spriteType, or frameAnimatedSpriteType-backed fields.",
+    "GFX sprite registration links interface script to the generated PNG path.",
+    "validate_hoi4_project can report missing sprite definitions or texture files after asset generation.",
+    "repair_hoi4_project can confirm script encoding and formatting around generated .gfx/.gui files."
+]
+
+validation = [
+    "Require approved=true for new generated assets.",
+    "Use dry_run first and inspect the PNG preview before write mode.",
+    "Keep asset_name, sprite_name, gui_name, paths, and script tokens ASCII-only.",
+    "Use mod-specific gfx/interface subdirectories to avoid collisions.",
+    "Use frameAnimatedSpriteType only when the asset is an actual animated sprite sheet with matching frame metadata.",
+    "Do not claim visual fit until the user or game/debug validation confirms the asset works in context.",
+    "Prefer existing art when the user has not approved procedural generation."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Interface_modding",
+    "https://hoi4.paradoxwikis.com/Scripted_GUI_modding"
+]

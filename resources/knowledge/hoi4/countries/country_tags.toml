@@ -1,0 +1,43 @@
+id = "countries.country_tags"
+
+title = "Country tags and country creation"
+
+category = "country"
+
+file_types = [
+    "txt",
+    "csv",
+    "yml",
+    "gfx"
+]
+
+tags = [
+    "country_tags",
+    "cosmetic_tags",
+    "history",
+    "colors",
+    "flags"
+]
+
+body = "Country creation involves tag registration, country history, color, graphical culture, flags, localisation, and optionally cosmetic tags. Generated content should treat the three-letter tag as a namespace root."
+
+syntax_blocks = [
+    "common/country_tags/00_countries.txt",
+    "TAG = \"countries/TAG.txt\"",
+    "history/countries/TAG - Name.txt"
+]
+
+relationships = [
+    "History, focus trees, ideas, and localisation all reference tags.",
+    "Cosmetic tags alter display identity."
+]
+
+validation = [
+    "Use unused tags.",
+    "Add localisation for country and adjective.",
+    "Ensure flag assets exist."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Country_creation"
+]

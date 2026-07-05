@@ -1,0 +1,57 @@
+id = "on_actions.unit_leader_military_aces"
+
+title = "On action unit leader, military, and ace hooks"
+
+category = "on_actions"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "on_unit_leader_created",
+    "on_army_leader_daily",
+    "on_army_leader_won_combat",
+    "on_army_leader_lost_combat",
+    "on_unit_leader_level_up",
+    "on_army_leader_promoted",
+    "on_unit_leader_promote_from_ranks_veteran",
+    "on_unit_leader_promote_from_ranks_green",
+    "on_nuke_drop",
+    "on_pride_of_the_fleet_sunk",
+    "on_naval_invasion",
+    "on_paradrop",
+    "on_units_paradropped_in_state",
+    "on_add_history",
+    "on_ace_promoted",
+    "on_ace_killed",
+    "PREV",
+    "OWNER"
+]
+
+body = "Unit leader hooks: on_unit_leader_created, on_army_leader_daily, on_army_leader_won_combat, on_army_leader_lost_combat, on_unit_leader_level_up, and on_army_leader_promoted use ROOT as unit leader and FROM as owner country. on_unit_leader_promote_from_ranks_veteran and on_unit_leader_promote_from_ranks_green use ROOT as unit leader, FROM as unit, and OWNER as owner country. Military hooks: on_nuke_drop uses ROOT launching country and FROM nuked state. on_pride_of_the_fleet_sunk uses ROOT as country that lost the pride ship and FROM as killer country. on_naval_invasion and on_paradrop have THIS/default as invaded state, ROOT as invading country, and FROM as source state; on_units_paradropped_in_state uses ROOT as destination state and FROM as dropping country. on_add_history uses ROOT as unit. Ace hooks: on_ace_promoted has FROM as ace. on_ace_killed, on_ace_killed_on_accident, and on_non_ace_killed_other_ace use FROM for the relevant ace. on_ace_killed_by_ace and on_ace_killed_other_ace use FROM and PREV to represent the two aces depending on survivor/death side. on_aces_killed_each_other uses FROM ace and PREV enemy ace."
+
+syntax_blocks = [
+    "on_army_leader_daily = { effect = { # ROOT: unit leader; FROM: owner country } }",
+    "on_unit_leader_promote_from_ranks_veteran = { effect = { # ROOT: unit leader; FROM: unit; OWNER: owner country } }",
+    "on_naval_invasion = { effect = { ROOT = { add_political_power = 100 } } }",
+    "on_paradrop = { effect = { FROM = { controller = { add_war_support = 0.01 } } } }",
+    "on_ace_killed_by_ace = { random_events = { 100 = my_mod_ace.1 } }"
+]
+
+relationships = [
+    "Unit leader hooks are character/unit-leader scoped, not country scoped.",
+    "Naval invasion and paradrop explicitly separate THIS/default state from ROOT invading country.",
+    "Ace duel hooks use PREV for the second ace; generated events should preserve that chain."
+]
+
+validation = [
+    "Scope into FROM before owner-country effects in unit leader hooks.",
+    "Do not use country effects directly in on_naval_invasion or on_paradrop default state scope.",
+    "For ace events, document which ace is FROM and which is PREV before writing localisation or effects.",
+    "Use timed traits carefully in leader promotion hooks to avoid stacking."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/On_actions"
+]

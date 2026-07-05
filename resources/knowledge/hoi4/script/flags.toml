@@ -1,0 +1,40 @@
+id = "script.flags"
+
+title = "Flags and one-time state gates"
+
+category = "script"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "country_flag",
+    "global_flag",
+    "state_flag",
+    "set_flag",
+    "has_flag"
+]
+
+body = "Flags are lightweight state markers for one-time effects, event chains, GUI state, and decision unlocks. Use them for boolean state, but prefer variables when numeric state or dynamic UI frame calculation is needed."
+
+syntax_blocks = [
+    "set_country_flag = my_mod_started",
+    "has_country_flag = my_mod_started",
+    "clr_country_flag = my_mod_started"
+]
+
+relationships = [
+    "Flags gate triggers; events set flags; decisions and focuses read flags."
+]
+
+validation = [
+    "Prefix flag names.",
+    "Avoid flags for values that should be variables.",
+    "Clear temporary flags when they represent transient state."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Effects",
+    "https://hoi4.paradoxwikis.com/Triggers"
+]

@@ -1,0 +1,39 @@
+id = "units.sub_units"
+
+title = "Sub-units, battalions, and support companies"
+
+category = "unit"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "sub_units",
+    "battalion",
+    "support",
+    "combat_width",
+    "equipment"
+]
+
+body = "Sub-units define battalion and support company stats, categories, equipment needs, map icons, and combat behavior. Generated subunits are gameplay-balance sensitive and require technology and equipment integration."
+
+syntax_blocks = [
+    "sub_units = { my_battalion = { sprite = infantry type = infantry group = infantry combat_width = 2 } }"
+]
+
+relationships = [
+    "Division templates reference subunits.",
+    "Equipment and technology gate availability."
+]
+
+validation = [
+    "Check equipment needs.",
+    "Avoid duplicate category errors.",
+    "Test combat width and AI usage."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Unit_modding",
+    "https://hoi4.paradoxwikis.com/Division_modding"
+]

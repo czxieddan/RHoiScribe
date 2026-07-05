@@ -1,0 +1,42 @@
+id = "events.country_event"
+
+title = "Country events"
+
+category = "event"
+
+file_types = [
+    "txt",
+    "yml"
+]
+
+tags = [
+    "namespace",
+    "country_event",
+    "option",
+    "trigger",
+    "immediate"
+]
+
+body = "Country and news_event blocks are namespaced scripted events with title, desc, trigger, immediate effects, and options. They are used for narrative chains, decision outcomes, focus rewards, and on_action responses. Batch event generation is a format skeleton workflow for new event files: use the generator first so namespace, event wrappers, option blocks, and braces are game-readable, then use edit_hoi4_script_file to complete scope-aware triggers, options, effects, images, hidden effects, follow-up calls, and finished localisation. The tool input field options is plural JSON input and renders as repeated HOI4 option = {} blocks; do not write a literal options block into game files."
+
+syntax_blocks = [
+    "namespace = my_mod",
+    "news_event = { id = my_mod.1 title = my_mod.1.t desc = my_mod.1.d picture = GFX_report_event_generic major = yes trigger = { has_country_flag = my_flag } immediate = { hidden_effect = { set_global_flag = my_seen } } option = { name = my_mod.1.a ai_chance = { factor = 1 } add_war_support = 0.05 } }"
+]
+
+relationships = [
+    "Options run effects; localisation keys provide text; on_actions and focuses fire events."
+]
+
+validation = [
+    "Use namespaces.",
+    "For complex event chains, generate the skeleton first and then complete the file through edit_hoi4_script_file.",
+    "Ensure option names are localised.",
+    "Avoid missing is_triggered_only when event should not pulse.",
+    "Hide bookkeeping effects in hidden_effect when the player should not see implementation details.",
+    "Provide finished event prose, not placeholder keys or design notes."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Event_modding"
+]

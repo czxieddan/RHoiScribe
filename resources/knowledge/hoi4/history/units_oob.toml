@@ -1,0 +1,40 @@
+id = "history.units_oob"
+
+title = "OOB files and starting units"
+
+category = "history"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "oob",
+    "division",
+    "air_wings",
+    "navy",
+    "division_template"
+]
+
+body = "Order of battle files define starting divisions, ships, air wings, and templates. Generated OOB must reference valid province IDs, equipment, division templates, and technology availability."
+
+syntax_blocks = [
+    "division = { name = \"1st Division\" location = 1234 division_template = \"Infantry Division\" start_experience_factor = 0.1 }",
+    "air_wings = { 1234 = { fighter_equipment_0 = { owner = TAG amount = 100 } } }"
+]
+
+relationships = [
+    "Country history loads OOB.",
+    "Division templates and equipment archetypes must exist."
+]
+
+validation = [
+    "Check province IDs.",
+    "Keep template names exact.",
+    "Avoid giving equipment that does not exist."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Division_modding",
+    "https://hoi4.paradoxwikis.com/Naval_modding"
+]

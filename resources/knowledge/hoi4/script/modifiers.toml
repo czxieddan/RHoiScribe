@@ -1,0 +1,41 @@
+id = "script.modifiers"
+
+title = "Modifiers and modifier scopes"
+
+category = "script"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "modifier",
+    "idea",
+    "state_modifier",
+    "dynamic_modifier",
+    "opinion_modifier"
+]
+
+body = "Modifiers alter values rather than directly running effects. They are used in ideas, traits, states, technologies, equipment, decisions, dynamic modifiers, opinion modifiers, and scripted contexts. Generated modifiers must use valid modifier keys for the target owner."
+
+syntax_blocks = [
+    "modifier = { political_power_gain = 0.1 }",
+    "state_modifier = { local_resources_factor = 0.1 }",
+    "dynamic_modifier = { modifier = { stability_factor = 0.05 } }"
+]
+
+relationships = [
+    "Ideas and traits wrap modifiers; dynamic modifiers are attached by effects; technologies and equipment use modifiers for gameplay values."
+]
+
+validation = [
+    "Do not mix state-only and country-only modifiers.",
+    "Prefer small numeric values with explicit sign.",
+    "Use HOI4DOC or wiki lookup before adding unfamiliar modifier keys.",
+    "Hide helper-only triggers, effects, or calculation modifiers from player-facing UI whenever the file type supports a hidden form."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Modifiers",
+    "https://hoi4doc.dev"
+]

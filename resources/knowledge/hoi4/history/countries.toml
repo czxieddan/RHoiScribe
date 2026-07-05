@@ -1,0 +1,41 @@
+id = "history.countries"
+
+title = "Country history setup"
+
+category = "history"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "history",
+    "capital",
+    "set_politics",
+    "recruit_character",
+    "oob"
+]
+
+body = "Country history files set starting politics, capital, technology, OOB references, characters, ideas, and starting effects. Generated setup must be deterministic and compatible with the selected start date."
+
+syntax_blocks = [
+    "set_politics = { ruling_party = neutrality elections_allowed = no }",
+    "capital = 123",
+    "oob = \"TAG_1936\"",
+    "recruit_character = my_character"
+]
+
+relationships = [
+    "Country history references states, OOB files, characters, ideas, and technologies."
+]
+
+validation = [
+    "Use existing state IDs.",
+    "Check recruited character IDs.",
+    "Keep start-date blocks explicit."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Country_creation",
+    "https://hoi4.paradoxwikis.com/History_modding"
+]

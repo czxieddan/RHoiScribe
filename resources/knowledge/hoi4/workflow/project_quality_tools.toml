@@ -1,0 +1,67 @@
+id = "workflow.project_quality_tools"
+
+title = "Project indexing, validation, repair, and targeted edits"
+
+category = "workflow"
+
+file_types = [
+    "txt",
+    "gui",
+    "gfx",
+    "yml",
+    "lua",
+    "ogg",
+    "wav",
+    "png"
+]
+
+tags = [
+    "index_hoi4_project",
+    "validate_hoi4_project",
+    "repair_hoi4_project",
+    "edit_hoi4_script_file",
+    "red_yellow_green",
+    "ffmpeg",
+    "encoding",
+    "references"
+]
+
+body = "Use index_hoi4_project before broad generation or refactoring so the agent has a structured map of HOI4 definitions, references, files, flags, variables, scripted triggers/effects, focuses, decision categories, event namespaces, GUI elements, GFX sprites, texture paths, and localisation keys. Use validate_hoi4_project after indexing and before finishing to return red/yellow/green checks for duplicate definitions, brace balance, unclosed_block, missing GFX textures or sprite references, missing localisation references, missing_structural_definition checks for decision categories, event namespaces, and scripted effects, and replace_path risks. Use repair_hoi4_project in dry-run mode after file changes, then use repair_hoi4_project apply mode to normalize repairable UTF-8 BOM rules, detected legacy text encodings, Paradox script formatting, sound/music checks, or ffmpeg-assisted media convention issues. Do not manually patch encoding or media convention issues file by file; normalize the mod workspace through the repair tool. If ffmpeg is needed and absent, ask the user for approval before installation. Use focus, event, and decision batch generators as skeleton builders for new files, then use edit_hoi4_script_file for targeted replacement or insertion of detailed named blocks; pass workspace_root so edits cannot escape the current mod or workspace tree and verify every replacement keeps { } pairs closed. When generation tools write files, agents must provide output_root for the current mod workspace or user-requested output root. generate_localisation_batch is a localisation-only helper with key/value entries; description text should be supplied as its own _desc key/value entry."
+
+syntax_blocks = [
+    "index_hoi4_project { roots = [{ path = \"<MOD_ROOT>\", role = \"mod\" }] include_game_roots = true }",
+    "validate_hoi4_project { roots = [{ path = \"<MOD_ROOT>\", role = \"mod\" }] }",
+    "repair_hoi4_project { roots = [{ path = \"<MOD_ROOT>\", role = \"mod\" }] dry_run = true format_scripts = true check_media = true }",
+    "edit_hoi4_script_file { path = \"<MOD_ROOT>/localisation/simp_chinese/example_l_simp_chinese.yml\" workspace_root = \"<MOD_ROOT>\" operation = { kind = \"upsert_localisation_entry\", key = \"TAG_key\", value = \"Text\" } dry_run = true }",
+    "generate_localisation_batch { language = \"simp_chinese\" entries = [{ key = \"TAG_key\", value = \"Text\" }] dry_run = false output_root = \"<MOD_ROOT>\" }"
+]
+
+relationships = [
+    "scan_unique_identifiers remains the creation-time duplicate check for proposed new tokens; project indexing is the broader reference graph for existing content.",
+    "validate_hoi4_project should be run before debug launch or release-critical claims.",
+    "repair_hoi4_project complements validation by fixing encoding and formatting issues that static validation reports or anticipates.",
+    "classify_error_log should be used after a game load failure to focus edits on the changed files most likely to matter."
+]
+
+validation = [
+    "Run dry-run mode before applying repairs or edits.",
+    "Run validate_hoi4_project before finishing after RHoiScribe-assisted file changes.",
+    "Treat missing_structural_definition as a red check: define missing decision categories, event namespaces, and similar indexed structures or correct the references.",
+    "Treat unclosed_block and brace_balance red checks as blockers before finishing or launching the game.",
+    "Before replacing a script block, check that the replacement content has balanced { } pairs and one complete named block.",
+    "Run repair_hoi4_project dry_run=true after file changes and use repair_hoi4_project apply mode for repairable encoding, formatting, and media convention changes.",
+    "Do not manually patch encoding or media convention issues file by file.",
+    "When dry_run=false for a generation tool, include output_root instead of relying on the tool error.",
+    "Review repair changes before committing.",
+    "Keep localisation files and interface/credits.txt as UTF-8 with BOM; keep other txt/lua files UTF-8 without BOM.",
+    "Under sound/, prefer wav files; for music OGG, verify 44100 Hz, 32-bit, and stereo when ffmpeg is available.",
+    "Do not install ffmpeg without explicit user approval; after approval, dry_run=false with install_ffmpeg=true may attempt silent installation.",
+    "Use targeted edit operations when only one named block or localisation key needs to change."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Modding",
+    "https://hoi4.paradoxwikis.com/Troubleshooting",
+    "https://hoi4.paradoxwikis.com/Interface_modding",
+    "https://ffmpeg.org/documentation.html"
+]

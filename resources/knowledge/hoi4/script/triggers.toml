@@ -1,0 +1,41 @@
+id = "script.triggers"
+
+title = "Triggers and condition blocks"
+
+category = "script"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "trigger",
+    "limit",
+    "available",
+    "visible",
+    "allow",
+    "has_country_flag"
+]
+
+body = "Triggers are boolean conditions used in availability, visibility, AI logic, scripted triggers, decisions, focuses, events, and GUI. They should be scoped correctly and kept readable. Complex conditions should be grouped under AND, OR, NOT, limit, or scripted triggers."
+
+syntax_blocks = [
+    "available = { has_war = yes }",
+    "limit = { tag = GER }",
+    "OR = { has_government = fascism has_government = neutrality }"
+]
+
+relationships = [
+    "Triggers gate effects; scripted_triggers reuse trigger logic; GUI triggers can compute temp variables before properties consume them."
+]
+
+validation = [
+    "Check scope compatibility.",
+    "Use always = yes/no only when intentional.",
+    "Avoid expensive visible triggers in frequently refreshed GUI."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Triggers",
+    "https://hoi4doc.dev"
+]

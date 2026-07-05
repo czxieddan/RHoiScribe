@@ -1,0 +1,43 @@
+id = "on_actions.hooks"
+
+title = "On actions and pulse hooks"
+
+category = "on_actions"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "on_actions",
+    "on_pulse",
+    "random_events",
+    "effect"
+]
+
+body = "On actions attach events or effects to hardcoded game hooks. Files live under common/on_actions/*.txt and use on_actions = { hook_name = { effect = { ... } random_events = { ... } } }. effect is an effect block and is valid for every hook. random_events can be used when the default hook scope is country-scoped and preserves the hook's ROOT/FROM/FROM.FROM chain for the fired event. Multiple random_events blocks each pick separately. on_actions do not fire from history/bookmark setup before the game has started."
+
+syntax_blocks = [
+    "on_actions = { on_startup = { effect = { ENG = { country_event = { id = my_mod.1 days = 30 } } } } }",
+    "on_actions = { on_monthly = { random_events = { 1 = my_mod.10 99 = 0 } } }",
+    "on_actions = { on_state_control_changed = { effect = { FROM.FROM = { set_resistance = 60 } } } }"
+]
+
+relationships = [
+    "ROOT is the assumed default scope unless the hook documents THIS separately from ROOT.",
+    "FROM and FROM.FROM are secondary scopes supplied by the hook, not universal meanings.",
+    "random_events should be weighted with 0 entries when no event should fire for most checks.",
+    "Pulse hooks should call events or scripted effects with cheap trigger gates instead of doing broad work inline."
+]
+
+validation = [
+    "Always include effect = { ... } when writing direct effects; otherwise the block can be confused with random_events-style content.",
+    "Avoid heavy logic directly in frequent pulses.",
+    "Use event triggers or if = { limit = { ... } } to filter.",
+    "Do not add global hooks without a clear mod prefix and documented scope table.",
+    "For release-critical code, verify hook existence and scope notes against the current game documentation files."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/On_actions"
+]

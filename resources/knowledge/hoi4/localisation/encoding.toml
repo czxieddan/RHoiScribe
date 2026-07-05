@@ -1,0 +1,47 @@
+id = "localisation.encoding"
+
+title = "Localisation encoding and key format"
+
+category = "localisation"
+
+file_types = [
+    "yml"
+]
+
+tags = [
+    "utf8",
+    "bom",
+    "language",
+    "keys",
+    "simp_chinese",
+    "english"
+]
+
+body = "HOI4 localisation yml files should be written with UTF-8 BOM. A file starts with a language root such as l_english: or l_simp_chinese:. Entries use key:0 \"Text\". The usual filename suffix is _l_<language>.yml, but the prefix and nested path should follow the user's request and workspace convention rather than a hardcoded TAG pattern. Keep generated keys stable and match script identifiers where possible. Never write placeholder localisation, design-note localisation, or draft labels as final text. Player-facing localisation must read as prose. For focus descriptions, mission descriptions, event text, and similar narrative copy, write Shakespeare-level polished prose unless the user explicitly asks for terse text. When the agent writes localisation text itself rather than copying user-provided wording, it must perform a literary review after writing: confirm the text speaks to players, is not placeholder or design-draft language, has polished prose quality, and matches the current project's narrative color when existing prose is available. If the project already has narrative or promotional prose, summarize its style and imitate it before writing new entries. Hide implementation-only helper triggers, effects, and calculation modifiers from the player; hidden_effect, hidden_trigger, hidden = yes, or equivalent omissions should be used when the file type supports them."
+
+syntax_blocks = [
+    "l_english:",
+    " my_key:0 \"Visible text\"",
+    " my_key_desc:0 \"Description text\""
+]
+
+relationships = [
+    "Script IDs usually become localisation keys; tools writing yml must preserve BOM; scripted localisation can compose dynamic text.",
+    "Hidden triggers, hidden effects, and calculation-only modifiers should not leak into localisation as visible design notes.",
+    "Internal aggregates such as an OGAS system correction total should not become visible dynamic modifiers unless the user explicitly wants a player-facing value."
+]
+
+validation = [
+    "Write UTF-8 BOM for yml.",
+    "Keep one language root per file.",
+    "Escape quotes in generated strings.",
+    "Never write placeholder localisation, design-note localisation, or draft labels as final text.",
+    "For focus descriptions, missions, and events, provide Shakespeare-level polished prose unless the user explicitly requests terse text.",
+    "After self-authored localisation, run a literary review for player-facing voice, non-placeholder wording, prose quality, and project style match.",
+    "Keep script keys ASCII even when the visible value is Chinese, Japanese, Russian, or another non-ASCII language.",
+    "Hide implementation-only helper triggers, effects, and calculation modifiers from player-facing UI where supported."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Localisation"
+]

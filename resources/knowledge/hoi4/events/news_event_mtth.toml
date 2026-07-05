@@ -1,0 +1,39 @@
+id = "events.news_event_mtth"
+
+title = "News events and MTTH"
+
+category = "event"
+
+file_types = [
+    "txt",
+    "yml"
+]
+
+tags = [
+    "news_event",
+    "mean_time_to_happen",
+    "major",
+    "picture"
+]
+
+body = "News events target global presentation while MTTH-driven events evaluate over time. Generated events must avoid accidental spam and must distinguish triggered-only chains from recurring pulse logic."
+
+syntax_blocks = [
+    "news_event = { id = my_mod.10 title = my_mod.10.t desc = my_mod.10.d major = yes }",
+    "mean_time_to_happen = { days = 30 modifier = { factor = 0 has_war = no } }"
+]
+
+relationships = [
+    "MTTH uses triggers and modifiers.",
+    "News events need localisation and pictures."
+]
+
+validation = [
+    "Gate recurring events tightly.",
+    "Use fire_only_once when appropriate.",
+    "Check picture keys."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Event_modding"
+]

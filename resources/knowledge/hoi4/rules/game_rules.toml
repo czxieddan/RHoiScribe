@@ -1,0 +1,39 @@
+id = "rules.game_rules"
+
+title = "Game rules and startup configuration"
+
+category = "rules"
+
+file_types = [
+    "txt",
+    "yml"
+]
+
+tags = [
+    "game_rules",
+    "option",
+    "allowed",
+    "default"
+]
+
+body = "Game rules expose startup choices that can alter country setup, AI behavior, or mod systems. Generated game rules need clear localisation, default choices, and script hooks that read the selected option."
+
+syntax_blocks = [
+    "game_rule = { name = my_rule group = my_group option = { name = default } }",
+    "has_game_rule = { rule = my_rule option = default }"
+]
+
+relationships = [
+    "Startup events and on_actions read game rules.",
+    "Localisation names rule groups and options."
+]
+
+validation = [
+    "Provide a default option.",
+    "Do not require DLC-specific behavior unless documented.",
+    "Use rule checks in generated triggers."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Game_rules"
+]

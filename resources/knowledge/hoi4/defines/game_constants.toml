@@ -1,0 +1,38 @@
+id = "defines.game_constants"
+
+title = "Defines and game constants"
+
+category = "defines"
+
+file_types = [
+    "lua"
+]
+
+tags = [
+    "defines",
+    "NDefines",
+    "balance",
+    "constants"
+]
+
+body = "Defines override game constants and affect broad systems. They are powerful but risky for compatibility. Generated mods should avoid defines unless the user explicitly requests balance or engine-level tuning."
+
+syntax_blocks = [
+    "NDefines.NGame.START_DATE = \"1936.1.1.12\"",
+    "NDefines.NCountry.POLITICAL_POWER_CAP = 2000"
+]
+
+relationships = [
+    "Defines can affect every generated content system.",
+    "Latest patch snapshots matter for define compatibility."
+]
+
+validation = [
+    "Do not generate defines by default.",
+    "Keep overrides minimal.",
+    "Verify define names against current game version."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Defines"
+]

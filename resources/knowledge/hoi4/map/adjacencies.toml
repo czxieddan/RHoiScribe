@@ -1,0 +1,42 @@
+id = "map.adjacencies"
+
+title = "Adjacencies, strategic regions, and supply map"
+
+category = "map"
+
+file_types = [
+    "csv",
+    "txt"
+]
+
+tags = [
+    "adjacencies",
+    "strategic_regions",
+    "supply_nodes",
+    "railways"
+]
+
+body = "Adjacencies define special map connections; strategic regions group provinces for air/naval logic; supply nodes and railways define logistics. Generated content must cross-check province IDs and region membership."
+
+syntax_blocks = [
+    "adjacencies.csv",
+    "strategicregions/*.txt",
+    "supply_nodes.txt",
+    "railways.txt"
+]
+
+relationships = [
+    "Air regions and naval regions affect AI and combat.",
+    "State edits interact with supply and strategic regions."
+]
+
+validation = [
+    "Check province IDs exist.",
+    "Avoid duplicate region membership.",
+    "Do not infer supply topology from state ownership alone."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Map_modding",
+    "https://hoi4.paradoxwikis.com/Strategic_region_modding"
+]

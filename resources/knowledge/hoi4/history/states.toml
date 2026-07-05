@@ -1,0 +1,38 @@
+id = "history.states"
+
+title = "State history, ownership, cores, and buildings"
+
+category = "history"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "states",
+    "owner",
+    "add_core_of",
+    "buildings",
+    "victory_points"
+]
+
+body = "State history defines owner, controller, cores, claims, buildings, victory points, resources, and province-level history. Generated state edits are conflict-prone and should be scoped to explicit state IDs."
+
+syntax_blocks = [
+    "history = { owner = TAG add_core_of = TAG buildings = { infrastructure = 3 arms_factory = 2 } victory_points = { 1234 10 } }"
+]
+
+relationships = [
+    "Country history needs valid capital state.",
+    "Map and strategic regions contextualize state IDs."
+]
+
+validation = [
+    "Avoid replacing whole state files unless intended.",
+    "Check owner/controller consistency.",
+    "Keep victory point province IDs valid."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/State_modding"
+]

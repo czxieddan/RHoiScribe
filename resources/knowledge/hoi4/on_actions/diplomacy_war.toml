@@ -1,0 +1,57 @@
+id = "on_actions.diplomacy_war"
+
+title = "On action diplomacy, war, release, and access hooks"
+
+category = "on_actions"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "on_send_volunteers",
+    "on_border_war_lost",
+    "on_war_relation_added",
+    "on_declare_war",
+    "on_war",
+    "on_peace",
+    "on_capitulation",
+    "on_capitulation_immediate",
+    "on_uncapitulation",
+    "on_annex",
+    "on_civil_war_end",
+    "on_puppet",
+    "on_liberate",
+    "on_release_as_free",
+    "on_release_as_puppet",
+    "on_guarantee",
+    "on_lend_lease",
+    "on_send_attache"
+]
+
+body = "War and diplomacy hooks: on_send_volunteers uses ROOT sender and FROM receiver. on_border_war_lost has default scope as the state that lost the scripted border war. on_war_relation_added uses ROOT attacker and FROM defender when two countries become directly at war. on_declare_war uses ROOT declarer and FROM target. on_war has THIS as the country that just entered war from peace. on_peace has THIS as the country that is no longer at war. on_capitulation and on_capitulation_immediate use ROOT capitulated country and FROM winner. on_uncapitulation uses ROOT as the affected country. on_annex uses ROOT winner and FROM annexed country. on_civil_war_end_before_annexation, on_civil_war_end, and on_annex can all participate in civil-war endings, usually with ROOT winner and FROM annexed side. on_puppet uses ROOT puppeted nation and FROM overlord. on_liberate uses ROOT liberated nation and FROM liberator leader. on_release_as_free uses ROOT released free nation and FROM releaser. on_release_as_puppet uses ROOT released puppet and FROM overlord. Access and aid hooks include on_guarantee ROOT guarantor FROM guaranteed, on_military_access ROOT requester FROM acceptor, on_offer_military_access ROOT offerer FROM acceptor, on_call_allies ROOT caller FROM joined ally, on_join_allies ROOT joining country FROM war owner, on_lend_lease ROOT sender FROM acceptor, on_incoming_lend_lease ROOT acceptor FROM requester, on_send_expeditionary_force ROOT sender FROM acceptor, on_return_expeditionary_forces ROOT force owner FROM host, on_request_expeditionary_forces ROOT requester FROM target, on_ask_for_state_control ROOT requester FROM current controller, on_give_state_control ROOT giver FROM receiver, on_peace_proposal ROOT conditional surrender sender FROM receiver, and on_send_attache default sender with FROM receiver."
+
+syntax_blocks = [
+    "on_war_relation_added = { effect = { # ROOT: attacker; FROM: defender } }",
+    "on_declare_war = { effect = { if = { limit = { tag = GER FROM = { tag = SOV } } add_ideas = GER_barbarossa } } }",
+    "on_capitulation = { effect = { # ROOT: capitulated country; FROM: winner } }",
+    "on_border_war_lost = { effect = { owner = { add_ideas = my_mod_lost_conflict } } }",
+    "on_lend_lease = { effect = { # ROOT: sender; FROM: acceptor } }"
+]
+
+relationships = [
+    "on_war_relation_added differs from on_war: relation-added fires for country pairs entering war, while on_war fires when a country moves from peace to war.",
+    "Capitulation hooks differ by timing: immediate is at the beginning of capitulation, on_capitulation is mid-process after some cleanup has already occurred.",
+    "Release and puppet hooks often require localisation, flags, and cosmetic tag handling."
+]
+
+validation = [
+    "Do not assume on_war gives the opponent; use on_war_relation_added or on_declare_war when attacker/defender matters.",
+    "For civil war endings, guard duplicate effects because annex and civil-war hooks can both fire.",
+    "Document sender/receiver direction for every diplomacy hook before generating effects.",
+    "Avoid applying country effects in state default scope such as on_border_war_lost without scoping to owner/controller."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/On_actions"
+]

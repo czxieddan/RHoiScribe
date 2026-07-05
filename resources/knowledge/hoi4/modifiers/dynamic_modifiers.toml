@@ -1,0 +1,39 @@
+id = "modifiers.dynamic_modifiers"
+
+title = "Dynamic modifiers and scripted value-driven buffs"
+
+category = "modifier"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "dynamic_modifier",
+    "add_dynamic_modifier",
+    "remove_dynamic_modifier",
+    "modifier"
+]
+
+body = "Dynamic modifiers let script attach a reusable modifier block to a country or state. They are useful for systems where effects add, remove, or update persistent buffs without creating many ideas."
+
+syntax_blocks = [
+    "dynamic_modifier = { my_dynamic_modifier = { modifier = { political_power_gain = 0.05 } } }",
+    "add_dynamic_modifier = { modifier = my_dynamic_modifier }"
+]
+
+relationships = [
+    "Effects attach dynamic modifiers.",
+    "Variables can drive scripted values related to modifiers."
+]
+
+validation = [
+    "Remove old dynamic modifiers before reapplying when necessary.",
+    "Keep modifier scope compatible.",
+    "Localise displayed modifiers if visible."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Modifiers",
+    "https://hoi4.paradoxwikis.com/Effects"
+]

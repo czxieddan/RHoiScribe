@@ -1,0 +1,48 @@
+id = "decision.basic_category"
+
+title = "Decision categories and decisions"
+
+category = "decision"
+
+file_types = [
+    "txt",
+    "yml"
+]
+
+tags = [
+    "decisions",
+    "category",
+    "visible",
+    "available",
+    "complete_effect"
+]
+
+body = "Decision categories group decisions; individual decisions control visibility, availability, cost, timers, removal, effects, and AI use. A decision category should be defined as a top-level category block, and category metadata can live in common/decisions/categories/*.txt as a decision category definition while the actual decision entries normally live under common/decisions/*.txt. When calling the batch decision tool for a new category, the agent must also define or complete the matching common/decisions/categories/*.txt category metadata unless an indexed game or dependency root already provides that category. Batch decision generation is a format skeleton workflow for new decision files: use the generator first so category and decision braces are game-readable, then use edit_hoi4_script_file to complete missions, timers such as days_mission_timeout, dynamic logic, target rules, visible/available gates, effects, timeout/cancel logic, and AI weights. Do not treat the skeleton as final content for missions, targeted decisions, state-targeted decisions, or gameplay systems."
+
+syntax_blocks = [
+    "common/decisions/categories/my_categories.txt",
+    "my_category = { icon = generic_decisions }",
+    "common/decisions/my_decisions.txt",
+    "my_category = { icon = generic_decisions my_decision = { icon = generic_decision cost = 25 days_mission_timeout = 30 available = { has_political_power > 25 } cancel_trigger = { has_war = no } complete_effect = { custom_effect_tooltip = my_warning hidden_effect = { set_country_flag = my_done } } timeout_effect = { clr_country_flag = my_pending } ai_will_do = { factor = 0 } } }"
+]
+
+relationships = [
+    "Decisions consume triggers and effects.",
+    "Localisation keys usually match category and decision IDs.",
+    "Decision blocks under common/decisions/*.txt should reference categories that are defined in common/decisions/categories/*.txt or otherwise supplied by the game or a dependency."
+]
+
+validation = [
+    "Check that every decision category used by common/decisions/*.txt resolves to a category definition when the active mod set is indexed.",
+    "For new categories, create or update common/decisions/categories/*.txt metadata before final validation.",
+    "For complex decision or mission work, generate the skeleton first and then complete the file through edit_hoi4_script_file.",
+    "Use visible for display gates and available for click gates.",
+    "Set fire_only_once, days_remove, days_mission_timeout, timeout_effect, cancel_trigger, or remove_trigger where relevant.",
+    "Check AI weights.",
+    "Include dynamic = yes only when the decision should be evaluated dynamically.",
+    "Hide helper-only triggers, effects, or calculation modifiers from player-facing UI whenever the file type supports a hidden form."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Decision_modding"
+]

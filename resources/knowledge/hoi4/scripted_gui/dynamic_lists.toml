@@ -1,0 +1,43 @@
+id = "scripted_gui.dynamic_lists"
+
+title = "Scripted GUI dynamic lists and properties"
+
+category = "scripted_gui"
+
+file_types = [
+    "txt",
+    "gui"
+]
+
+tags = [
+    "scripted_gui",
+    "dynamic_lists",
+    "triggers",
+    "properties",
+    "temp_variable",
+    "array"
+]
+
+body = "Scripted GUI binds GUI windows to script-driven visibility, click effects, dynamic properties, and dynamic lists. It is the core bridge for custom HOI4 interfaces and must be generated with exact element names."
+
+syntax_blocks = [
+    "scripted_gui = { my_gui = { context_type = player_context window_name = \"my_window\" visible = { always = yes } dynamic_lists = { my_grid = { array = ROOT.my_array entry_container = my_entry change_scope = no value = my_value index = my_index } } } }"
+]
+
+relationships = [
+    "GUI element names must match triggers, effects, and properties.",
+    "Arrays and temp variables drive dynamic lists and positions.",
+    "GFX registers images used by properties."
+]
+
+validation = [
+    "Check window_name exists in .gui.",
+    "Use cheap visible triggers.",
+    "Clear and rebuild temp arrays before dynamic list calculations.",
+    "Generated comments should be in clear English and explain only non-obvious logic."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Scripted_GUI_modding",
+    "https://hoi4.paradoxwikis.com/Data_structures"
+]

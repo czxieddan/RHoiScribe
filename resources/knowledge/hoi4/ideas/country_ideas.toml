@@ -1,0 +1,41 @@
+id = "ideas.country_ideas"
+
+title = "Ideas, advisors, and national spirits"
+
+category = "idea"
+
+file_types = [
+    "txt",
+    "yml"
+]
+
+tags = [
+    "ideas",
+    "country",
+    "advisor",
+    "national_spirit",
+    "modifier"
+]
+
+body = "Idea files define national spirits, advisors, manufacturers, theorists, and other idea types. The key content is picture, allowed/visible/available logic, cost, traits, and modifier blocks."
+
+syntax_blocks = [
+    "ideas = { country = { my_idea = { picture = my_idea modifier = { stability_factor = 0.05 } } } }"
+]
+
+relationships = [
+    "Ideas wrap modifiers.",
+    "Characters can own advisor roles.",
+    "Localisation keys match idea IDs."
+]
+
+validation = [
+    "Use valid idea category.",
+    "Keep picture key available.",
+    "Do not mix incompatible advisor fields.",
+    "Hide helper-only triggers, effects, or calculation modifiers from player-facing UI whenever the file type supports a hidden form."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Idea_modding"
+]

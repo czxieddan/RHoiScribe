@@ -1,0 +1,38 @@
+id = "units.division_templates"
+
+title = "Division templates and land units"
+
+category = "unit"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "division_template",
+    "regiments",
+    "support",
+    "oob"
+]
+
+body = "Division templates define regiment layout, support companies, priority, and displayed names. Generated templates must match available subunits and equipment, and OOB divisions must reference exact template names."
+
+syntax_blocks = [
+    "division_template = { name = \"Infantry Division\" regiments = { infantry = { x = 0 y = 0 } } support = { engineer = { x = 0 y = 0 } } }"
+]
+
+relationships = [
+    "OOB divisions use templates.",
+    "Subunits define equipment and stats.",
+    "Technologies unlock battalions."
+]
+
+validation = [
+    "Check battalion names.",
+    "Keep template names consistent.",
+    "Avoid impossible equipment requirements."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Division_modding"
+]

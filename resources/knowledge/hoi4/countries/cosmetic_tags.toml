@@ -1,0 +1,38 @@
+id = "countries.cosmetic_tags"
+
+title = "Cosmetic tags and dynamic country names"
+
+category = "country"
+
+file_types = [
+    "txt",
+    "yml"
+]
+
+tags = [
+    "cosmetic_tag",
+    "set_cosmetic_tag",
+    "drop_cosmetic_tag"
+]
+
+body = "Cosmetic tags change a country's visible name, flag, and identity without changing its underlying tag. They are useful for government changes, civil war outcomes, and scripted narrative states."
+
+syntax_blocks = [
+    "set_cosmetic_tag = MY_COSMETIC_TAG",
+    "drop_cosmetic_tag = yes"
+]
+
+relationships = [
+    "Cosmetic tags require localisation and flags.",
+    "Events and focuses commonly set cosmetic tags."
+]
+
+validation = [
+    "Provide fallback country localisation.",
+    "Do not treat cosmetic tag as a real country tag in history files.",
+    "Check flag naming."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Country_creation"
+]

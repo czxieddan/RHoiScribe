@@ -1,0 +1,52 @@
+id = "workflow.environment_discovery_debug_launch"
+
+title = "Game path discovery and debug launch preflight"
+
+category = "workflow"
+
+file_types = [
+    "json",
+    "mod",
+    "log",
+    "exe"
+]
+
+tags = [
+    "steam",
+    "libraryfolders.vdf",
+    "appmanifest_394360.acf",
+    "launcher-settings.json",
+    "gameDataPath",
+    "debug_mode",
+    "dlc_load.json",
+    "playset"
+]
+
+body = "When local game context is needed, discover the HOI4 install through Steam first: read SteamPath or InstallPath, read steamapps/libraryfolders.vdf, find steamapps/appmanifest_394360.acf, parse installdir, then validate steamapps/common/<installdir>. If Steam metadata fails, scan candidate roots for a folder named Hearts of Iron IV and validate it by requiring hoi4.exe plus common, history, events, localisation, and map. launcher-settings.json in the game directory can provide gameDataPath for the HOI4 document folder and version for patch-aware decisions; RHoiScribe expands %USER_DOCUMENTS% and returns game_path, game_executable_path, document_path, and error_log_path. Before launching hoi4.exe with -gdpr-compliant -debug_mode, validate that the document map, localisation, and history folders are empty; the document mod/*.mod descriptors exist; the workspace mod descriptor path points to the current workspace with / slashes; and dlc_load.json enables only the workspace mod plus dependencies. If the active playset needs to be prepared or corrected, use launch_hoi4_debug_with_rchadow. It uses Rchadow to apply a debug playset and chooses memory mode for temporary launch-only sessions or disk mode for durable project debugging unless the caller provides mode."
+
+syntax_blocks = [
+    "discover_hoi4_environment { scan_fallback = true } -> { game_path, game_executable_path, document_path, error_log_path, version }",
+    "validate_hoi4_debug_run { game_path = \"<GAME_PATH>\" document_path = \"<HOI4_DOCUMENT_PATH>\" workspace_mod_path = \"<MOD_ROOT>\" launch = false }",
+    "launch_hoi4_debug_with_rchadow { game_path = \"<GAME_PATH>\" document_path = \"<HOI4_DOCUMENT_PATH>\" workspace_mod_path = \"<MOD_ROOT>\" launch = false mode = \"disk\" }",
+    "hoi4.exe -gdpr-compliant -debug_mode"
+]
+
+relationships = [
+    "Debug runs should be followed by classify_error_log when the game reports errors or crashes.",
+    "Dependencies in descriptor.mod determine which extra .mod descriptors may be enabled.",
+    "launcher-settings.json version can guide bundled knowledge and compatibility checks.",
+    "Rchadow-assisted debug launch can correct dlc_load.json before launch instead of only reporting a playset mismatch."
+]
+
+validation = [
+    "Steam discovery must validate the final game path before returning it.",
+    "Document path checks target the HOI4 user data folder, not the game install folder.",
+    "Do not launch when any preflight check is red unless the user explicitly accepts the risk.",
+    "Use / slashes in launcher .mod path fields pointing to the workspace mod.",
+    "Use Rchadow disk mode when the debug playset should persist across sessions; use memory mode for one-off launch preparation."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Modding",
+    "https://hoi4.paradoxwikis.com/Troubleshooting"
+]

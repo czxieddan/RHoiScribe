@@ -1,0 +1,43 @@
+id = "script.language_basics"
+
+title = "Paradox script structure"
+
+category = "script"
+
+file_types = [
+    "txt",
+    "gui",
+    "gfx"
+]
+
+tags = [
+    "key_value",
+    "blocks",
+    "braces",
+    "comments",
+    "lists"
+]
+
+body = "HOI4 script is a key/value and nested block language. Whitespace is flexible, but readable indentation matters for review. Generators must balance braces, avoid duplicate equals signs, preserve quoted strings, and use comments only where they clarify non-obvious logic."
+
+syntax_blocks = [
+    "key = value",
+    "block = { key = value }",
+    "# comment"
+]
+
+relationships = [
+    "Triggers, effects, modifiers, and data definitions share this grammar.",
+    "GUI and GFX files use related block syntax with different keywords."
+]
+
+validation = [
+    "Count braces before writing.",
+    "Format with tabs for HOI4 script readability.",
+    "Keep generated IDs ASCII and stable."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Commands",
+    "https://hoi4.paradoxwikis.com/Modding"
+]

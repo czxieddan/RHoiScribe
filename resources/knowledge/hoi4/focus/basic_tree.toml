@@ -1,0 +1,45 @@
+id = "focus.basic_tree"
+
+title = "National focus trees"
+
+category = "focus"
+
+file_types = [
+    "txt",
+    "yml",
+    "gfx"
+]
+
+tags = [
+    "focus_tree",
+    "national_focus",
+    "completion_reward",
+    "ai_will_do"
+]
+
+body = "National focus files define trees, focus nodes, prerequisites, availability, bypass logic, AI weights, and completion rewards. Generated branches need stable IDs, positions, icons, and matching localisation. Batch focus generation is a format skeleton workflow for new files: use the generator first so wrapper blocks and braces are game-readable, then use edit_hoi4_script_file to replace or insert complete focus logic, triggers, offsets, AI weights, rewards, war warnings such as will_lead_to_war_with, and prose localisation. Do not treat the skeleton as final content for complex focus requests. Vanilla focus spacing is only a fallback. Before adding or reshaping a focus tree, inspect the workspace and dependency mods for interface/nationalfocusview.gui. If it exists, derive safe spacing from focus_spacing, positionType, and the actual focus icon dimensions instead of assuming x=2 and y=1. If the project state is ambiguous, ask the user before laying out a tree that could overlap."
+
+syntax_blocks = [
+    "focus_tree = { id = TAG_01 country = { factor = 0 modifier = { add = 10 tag = TAG } } focus = { id = TAG_01_FS_00 icon = GFX_focus_TAG_01_FS_00 x = 0 y = 0 prerequisite = { focus = TAG_01_FS_PREV } available = { has_government = communism } ai_will_do = { factor = 2 } completion_reward = { hidden_effect = { set_country_flag = TAG_focus_done } add_political_power = 50 } } }"
+]
+
+relationships = [
+    "Focus IDs are localisation keys and icon suffixes.",
+    "AI weights use triggers.",
+    "Rewards are effects and should hide implementation-only helper state in hidden_effect where appropriate.",
+    "Custom nationalfocusview.gui changes how x/y focus coordinates map to pixels and can make vanilla spacing unsafe."
+]
+
+validation = [
+    "For complex focus-tree requests, generate the skeleton first and then complete the file through edit_hoi4_script_file.",
+    "Check position overlap.",
+    "Use prerequisites or mutually_exclusive for branches.",
+    "Keep focus IDs unique across mods.",
+    "Use x=2/y=1 spacing only when no custom nationalfocusview.gui is present.",
+    "When custom focus UI exists, calculate overlap from focus_spacing and icon dimensions before writing positions.",
+    "Ask the user when dependency mods or GUI overrides make focus spacing ambiguous."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/National_focus_modding"
+]

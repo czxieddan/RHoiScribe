@@ -1,0 +1,41 @@
+id = "scripted_triggers.effects"
+
+title = "Scripted triggers and scripted effects"
+
+category = "script"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "scripted_triggers",
+    "scripted_effects",
+    "reuse",
+    "parameters"
+]
+
+body = "Scripted triggers and effects are reusable named blocks. They reduce duplication across events, focuses, decisions, and GUI effects. They should be written with clear scope assumptions and parameter-like naming conventions where supported by the target syntax."
+
+syntax_blocks = [
+    "common/scripted_triggers/my_mod_triggers.txt",
+    "my_mod_is_ready = { has_country_flag = my_mod_ready }",
+    "common/scripted_effects/my_mod_effects.txt",
+    "my_mod_reward = { add_political_power = 50 }"
+]
+
+relationships = [
+    "Triggers return boolean; effects mutate state.",
+    "Focuses, decisions, events, and GUI can call these named blocks."
+]
+
+validation = [
+    "Document expected scope in comments.",
+    "Do not hide side effects in trigger-like names.",
+    "Keep reusable blocks small."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Scripted_effects",
+    "https://hoi4.paradoxwikis.com/Scripted_triggers"
+]

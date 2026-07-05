@@ -1,0 +1,66 @@
+id = "script.unique_identifiers"
+
+title = "Unique identifiers, creation intent, and duplicate checks"
+
+category = "script"
+
+file_types = [
+    "txt",
+    "mod",
+    "yml"
+]
+
+tags = [
+    "unique_id",
+    "focus_id",
+    "shared_focus",
+    "joint_focus",
+    "focus_tree",
+    "country_tag",
+    "idea_token",
+    "dynamic_modifier",
+    "country_flag",
+    "global_flag",
+    "state_flag",
+    "character_flag",
+    "mio_flag",
+    "project_flag",
+    "variable",
+    "replace_path",
+    "overwrite",
+    "ascii_identifiers"
+]
+
+body = "Before creating a new role, scope-aware flag, TAG, idea token, dynamic modifier, focus, decision, event namespace, scripted effect, scripted trigger, character, or other reusable identifier, agents should run a structured uniqueness scan across the user's mod root and any configured game root. Only creation intent should be treated as a duplicate risk; when the user asks to reference existing content, the same match is informational. Focus IDs need special handling: focus = { id = ... }, shared_focus = { id = ... }, joint_focus = { id = ... }, and shared_focus/joint_focus references are focus ID matches, while focus_tree = { id = ... } is a focus tree ID and must not be confused with a focus node ID. Flag checks should distinguish country_flag, global_flag, state_flag, character_flag, mio_flag, and project_flag; unit_leader_flag is treated as the legacy character flag family. Generated file names, folder names, script identifiers, idea tokens, focus IDs, event IDs, variables, flags, OOB division names, and similar machine-readable tokens should stay ASCII-only; localisation prose and visible player text are the normal exceptions."
+
+syntax_blocks = [
+    "scan_unique_identifiers roots=[{ path=<MOD_ROOT>, role=mod }, { path=<GAME_ROOT>, role=game }] candidates=[{ entity_type=focus_id, value=TAG_reform_army, intent=create }]",
+    "focus = { id = TAG_reform_army }",
+    "shared_focus = { id = TAG_shared_industry }",
+    "joint_focus = { id = TAG_joint_research }",
+    "focus_tree = { id = TAG_focus_tree }",
+    "replace_path=\"common/national_focus\""
+]
+
+relationships = [
+    "Same-file overwrite risk is separate from identifier duplication; planned output paths should be checked against the mod root before writing.",
+    "descriptor.mod and .mod replace_path declarations can hide vanilla folders and should be surfaced whenever planned paths sit below replaced folders.",
+    "Country tags are defined structurally in common/country_tags, not by every textual appearance of TAG.",
+    "Flags and variables are usage-defined in script and should be scanned through structured effect/trigger keys such as set_country_flag, has_character_flag, modify_mio_flag, set_project_flag, set_variable, and check_variable."
+]
+
+validation = [
+    "Do not use plain global text search for uniqueness decisions.",
+    "Batch multiple candidates in one scan so a model can check a whole focus branch or idea set before writing files.",
+    "Report exact path, line, kind, and scope of each match.",
+    "Treat game-root matches as compatibility/override risks and mod-root matches as duplicate or overwrite risks.",
+    "When a duplicate is intentional, change intent to reference or ask the user to confirm an override.",
+    "Reject non-ASCII names for workspace paths and token-like fields unless the field is explicitly player-facing localisation text."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Modding",
+    "https://hoi4.paradoxwikis.com/National_focus_modding",
+    "https://hoi4.paradoxwikis.com/Country_creation",
+    "https://hoi4.paradoxwikis.com/Idea_modding"
+]

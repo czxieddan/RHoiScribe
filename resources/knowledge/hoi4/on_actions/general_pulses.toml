@@ -1,0 +1,50 @@
+id = "on_actions.general_pulses"
+
+title = "On action general startup and pulse hooks"
+
+category = "on_actions"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "on_startup",
+    "on_daily",
+    "on_daily_TAG",
+    "on_weekly",
+    "on_weekly_TAG",
+    "on_monthly",
+    "on_monthly_TAG",
+    "pulse",
+    "performance"
+]
+
+body = "General hooks: on_startup runs on the first day of a new game after country selection, not when loading saves, and has no default country scope; manually scope into countries, states, or other objects before country/state effects. on_daily runs every day for every country separately and is performance-heavy. on_daily_TAG runs daily only for the specified tag if that country exists. on_weekly runs weekly for every country and is useful for AI or maintenance logic. on_weekly_TAG runs weekly for one tag. on_monthly runs monthly for every country and often uses random_events. on_monthly_TAG runs monthly for one tag. Because non-TAG pulses iterate countries, scoping into a fixed tag inside on_daily can repeat the effect once per country on the map."
+
+syntax_blocks = [
+    "on_startup = { effect = { ENG = { country_event = { id = my_mod.1 days = 365 } } } }",
+    "on_daily = { effect = { if = { limit = { has_variable = my_mod_counter } add_to_variable = { my_mod_counter = 1 } } } }",
+    "on_daily_SOV = { effect = { if = { limit = { has_war_with = GER } SOV_escalate_the_war_effect = yes } } }",
+    "on_weekly = { effect = { if = { limit = { has_intelligence_agency = yes is_ai = yes } update_operation_ai = yes } } }",
+    "on_monthly = { random_events = { 1 = my_mod.10 99 = 0 } }",
+    "on_monthly_USA = { effect = { add_to_variable = { USA_unrest = 1 } } }"
+]
+
+relationships = [
+    "on_startup default scope is none; use tag scopes such as ENG = { ... } before country effects.",
+    "on_daily/on_weekly/on_monthly default scope is the iterated country.",
+    "TAG pulse variants only execute if the country exists.",
+    "random_events in pulse hooks evaluates event triggers in the hook scope."
+]
+
+validation = [
+    "Prefer TAG variants for country-specific mechanics.",
+    "Never put broad every_country logic inside on_daily unless the multiplicative cost is intentional.",
+    "For GUI counters, prefer daily/weekly variables with narrow flags and cheap checks.",
+    "Use 0-weight random_events entries when most pulse checks should do nothing."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/On_actions"
+]

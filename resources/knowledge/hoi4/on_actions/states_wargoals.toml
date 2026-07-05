@@ -1,0 +1,45 @@
+id = "on_actions.states_wargoals"
+
+title = "On action state-control and wargoal hooks"
+
+category = "on_actions"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "on_state_control_changed",
+    "on_generate_wargoal",
+    "on_justifying_wargoal_pulse",
+    "on_wargoal_expire",
+    "state",
+    "wargoal",
+    "FROM.FROM"
+]
+
+body = "State hook: on_state_control_changed fires when a state's controller changes; ROOT is new controller, FROM is old controller, and FROM.FROM is the state. Wargoal hooks: on_generate_wargoal uses ROOT as wargoal owner and FROM as target. on_justifying_wargoal_pulse checks daily while a wargoal is being justified; FROM is target nation. on_wargoal_expire uses FROM as wargoal owner in the documented pattern. These hooks are common sources of scope errors because state effects must be put inside FROM.FROM or another state scope."
+
+syntax_blocks = [
+    "on_state_control_changed = { effect = { if = { limit = { FROM.FROM = { state = 123 } } FROM.FROM = { set_resistance = 60 } } } }",
+    "on_generate_wargoal = { effect = { # ROOT: wargoal owner; FROM: target } }",
+    "on_justifying_wargoal_pulse = { random_events = { 100 = my_mod_justification.1 } }",
+    "on_wargoal_expire = { random_events = { 100 = my_mod_wargoal_expired.1 } }"
+]
+
+relationships = [
+    "State-control hooks are a safe place to rename states, set resistance, or trigger country effects after checking state ID.",
+    "Wargoal pulse hooks can be expensive because they are checked frequently.",
+    "FROM.FROM in on_state_control_changed is a state scope, not a country."
+]
+
+validation = [
+    "Never run state-only effects directly in ROOT for on_state_control_changed.",
+    "Check state ID or owner/controller before applying broad effects.",
+    "For justification pulses, use event triggers and flags to prevent repeated event spam.",
+    "Document whether FROM is country target or wargoal owner for each wargoal hook."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/On_actions"
+]

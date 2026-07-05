@@ -1,0 +1,51 @@
+id = "script.mtth_variables"
+
+title = "MTTH variables and dynamic scripted values"
+
+category = "script"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "mtth",
+    "mtth_variables",
+    "common/mtth",
+    "mean_time_to_happen",
+    "set_temp_variable",
+    "base",
+    "factor",
+    "add",
+    "modifier"
+]
+
+body = "MTTH variables are named dynamic numeric values, usually defined under common/mtth/*.txt, that can be referenced as mtth:<name> in script contexts that accept variable-like values. Do not confuse them with an event mean_time_to_happen block: event MTTH decides when a non-triggered event is checked, while a common/mtth value is a reusable score/value expression. A generator should define the MTTH variable with an explicit base, then apply ordered modifier blocks with factor/add plus triggers, and copy the result into set_temp_variable when later math, comparisons, GUI properties, or scripted effects need a stable value."
+
+syntax_blocks = [
+    "common/mtth/my_mod_mtth.txt",
+    "my_mod_support_score = { base = 0 modifier = { add = 5 has_war = yes } modifier = { factor = 0 NOT = { has_country_flag = my_mod_system_enabled } } }",
+    "set_temp_variable = { temp_support_score = mtth:my_mod_support_score }",
+    "if = { limit = { check_variable = { temp_support_score > 10 } } add_political_power = 25 }",
+    "mean_time_to_happen = { days = 30 modifier = { factor = 0 has_country_flag = my_mod_event_blocked } }"
+]
+
+relationships = [
+    "MTTH blocks use the same score grammar as ai_will_do and many priority blocks: base/add/factor plus trigger-style modifier blocks.",
+    "Variables and temp variables can consume mtth:<name> values, then clamp, compare, or display them.",
+    "Decision priorities, focus AI weights, event MTTH, and scripted GUI calculations often need the same base/modifier mental model."
+]
+
+validation = [
+    "Document expected input scope for each MTTH variable; ROOT/THIS/FROM assumptions affect triggers inside modifier blocks.",
+    "Use a mod prefix for MTTH IDs and temp variables.",
+    "Keep modifier order intentional because multiple matching modifiers are applied in file order.",
+    "Use set_temp_variable before reusing the value more than once in a generated block.",
+    "Verify uncommon mtth:<name> consumers against the current game documentation before release-critical generation."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Variables",
+    "https://hoi4.paradoxwikis.com/Event_modding",
+    "https://hoi4.paradoxwikis.com/National_focus_modding"
+]

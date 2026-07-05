@@ -1,0 +1,55 @@
+id = "on_actions.laresistance_mio"
+
+title = "On action La Resistance intelligence and MIO hooks"
+
+category = "on_actions"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "on_operation_completed",
+    "on_operative_detected_during_operation",
+    "on_operative_on_mission_spotted",
+    "on_operative_captured",
+    "on_operative_created",
+    "on_operative_death",
+    "on_operative_recruited",
+    "on_fully_decrypted_cipher",
+    "on_activated_active_decryption_bonuses",
+    "on_mio_size_increased",
+    "on_mio_design_team_assigned_to_tech",
+    "on_mio_design_team_assigned_to_variant",
+    "on_mio_industrial_manufacturer_assigned",
+    "on_mio_industrial_manufacturer_unassigned",
+    "operation",
+    "operative",
+    "MIO"
+]
+
+body = "La Resistance hooks: on_operation_completed uses THIS as operation, ROOT as initiating country, and FROM as target country. on_operative_detected_during_operation uses THIS operative, ROOT killer country when present, FROM operating country, and FROM.FROM operation state when a specific selection target exists. on_operative_on_mission_spotted uses THIS operative, FROM mission country, and ROOT operating country. on_operative_captured uses THIS operative, ROOT country where captured, and FROM operating country. on_operative_created and on_operative_recruited use THIS operative and FROM creator country. on_operative_death uses THIS operative, optional ROOT killer country, and FROM operating country. on_fully_decrypted_cipher uses THIS target country and FROM decrypter country. on_activated_active_decryption_bonuses uses THIS target country and FROM activating country. MIO hooks: on_mio_size_increased, on_mio_design_team_assigned_to_tech, on_mio_design_team_assigned_to_variant, on_mio_industrial_manufacturer_assigned, and on_mio_industrial_manufacturer_unassigned use ROOT as Military Industrial Organization and FROM as owner country."
+
+syntax_blocks = [
+    "on_operation_completed = { effect = { # THIS: operation; ROOT: initiating country; FROM: target country } }",
+    "on_operative_captured = { effect = { # THIS: operative; ROOT: country where captured; FROM: operating country } }",
+    "on_fully_decrypted_cipher = { effect = { # THIS: target country; FROM: decrypter country } }",
+    "on_mio_size_increased = { effect = { # ROOT: MIO; FROM: owner country } }"
+]
+
+relationships = [
+    "Operation and operative hooks often use THIS for non-country objects, so country effects must scope to ROOT or FROM.",
+    "FROM.FROM in operative detection is only present when the operation has a specific selection target state.",
+    "MIO hooks are object scoped and must scope through FROM for owner-country effects."
+]
+
+validation = [
+    "Check DLC assumptions before generating La Resistance or MIO hook content.",
+    "Do not assume ROOT is always available in operative death; killer country can be optional.",
+    "When FROM.FROM may be absent, guard state logic with limits or avoid mandatory state effects.",
+    "For MIO hooks, document whether the effect mutates the organization object or its owner country."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/On_actions"
+]

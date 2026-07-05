@@ -1,0 +1,41 @@
+id = "script.arrays"
+
+title = "Arrays and data structures"
+
+category = "script"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "array",
+    "temp_array",
+    "add_to_array",
+    "is_in_array",
+    "dynamic_lists"
+]
+
+body = "Arrays store scope or value lists and enable generated dynamic content, especially scripted GUI dynamic_lists and repeated script operations. Arrays need clear owner scope and reset behavior."
+
+syntax_blocks = [
+    "clear_temp_array = temp_items",
+    "add_to_temp_array = { array = temp_items value = mtth:score_1 }",
+    "is_in_array = { array = ROOT.my_array value = THIS }",
+    "temp_items^index"
+]
+
+relationships = [
+    "Dynamic GUI lists iterate arrays; scripted effects can populate arrays; variables can be read by index."
+]
+
+validation = [
+    "Clear temp arrays before rebuilding.",
+    "Define index/value names in dynamic_lists.",
+    "Check whether array values are scopes or numbers."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Data_structures",
+    "https://hoi4.paradoxwikis.com/Scripted_GUI_modding"
+]

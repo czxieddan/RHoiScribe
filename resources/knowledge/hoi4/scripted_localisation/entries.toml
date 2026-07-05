@@ -1,0 +1,37 @@
+id = "scripted_localisation.entries"
+
+title = "Scripted localisation entries"
+
+category = "localisation"
+
+file_types = [
+    "txt",
+    "yml"
+]
+
+tags = [
+    "scripted_localisation",
+    "defined_text",
+    "text",
+    "trigger"
+]
+
+body = "Scripted localisation chooses text by triggers. It is useful for state-dependent labels, GUI strings, event descriptions, and dynamic tooltips. Keep branch order deterministic and provide a default branch."
+
+syntax_blocks = [
+    "defined_text = { name = GetMyStatus text = { trigger = { has_war = yes } localization_key = my_status_war } text = { localization_key = my_status_peace } }"
+]
+
+relationships = [
+    "Localisation yml stores the visible keys; triggers choose which key is active."
+]
+
+validation = [
+    "Provide an unconditional fallback.",
+    "Keep branch triggers cheap for frequently refreshed GUI text.",
+    "Ensure every localization_key exists."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Scripted_localisation"
+]

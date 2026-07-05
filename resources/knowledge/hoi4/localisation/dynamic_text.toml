@@ -1,0 +1,41 @@
+id = "localisation.dynamic_text"
+
+title = "Dynamic localisation, formatting, and icons"
+
+category = "localisation"
+
+file_types = [
+    "yml",
+    "txt"
+]
+
+tags = [
+    "dynamic_localisation",
+    "scripted_localisation",
+    "formatting",
+    "icons"
+]
+
+body = "Localisation can reference scripted localisation, variables, icons, and formatting tokens. Generators should separate static display text from scripted dynamic branches and ensure every scripted localisation key has a fallback."
+
+syntax_blocks = [
+    "my_key:0 \"[ROOT.GetName]\"",
+    "my_value_key:0 \"[?ROOT.my_var|0]\"",
+    "my_icon_key:0 \"£pol_power \" "
+]
+
+relationships = [
+    "scripted_localisation.entries defines dynamic branches.",
+    "GUI textboxes and events consume localisation keys."
+]
+
+validation = [
+    "Check bracket balance.",
+    "Provide fallback text.",
+    "Do not embed untranslated script IDs in visible text."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Localisation",
+    "https://hoi4.paradoxwikis.com/Scripted_localisation"
+]

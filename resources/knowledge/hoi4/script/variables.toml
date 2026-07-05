@@ -1,0 +1,41 @@
+id = "script.variables"
+
+title = "Variables, temp variables, and math"
+
+category = "script"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "variable",
+    "temp_variable",
+    "set_variable",
+    "check_variable",
+    "math"
+]
+
+body = "Variables store numbers on scopes; temp variables exist for temporary calculations. GUI, scripted effects, scripted triggers, decisions, and events can use variables for dynamic systems. Prefer explicit variable prefixes and clean temp names."
+
+syntax_blocks = [
+    "set_variable = { my_var = 1 }",
+    "add_to_variable = { my_var = 5 }",
+    "set_temp_variable = { temp_score = ROOT.score }",
+    "check_variable = { my_var > 0 }"
+]
+
+relationships = [
+    "Arrays can be built from variables; GUI properties can read temp variables; MTTH and scripted localisation can reference variables."
+]
+
+validation = [
+    "Use temp_ prefix for temp variables.",
+    "Reset temporary arrays before rebuilding.",
+    "Avoid unprefixed global variable names."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Variables",
+    "https://hoi4.paradoxwikis.com/Data_structures"
+]

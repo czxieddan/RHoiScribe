@@ -1,0 +1,42 @@
+id = "script.effects"
+
+title = "Effects and state mutation"
+
+category = "script"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "effect",
+    "completion_reward",
+    "option",
+    "complete_effect",
+    "set_country_flag",
+    "add_ideas"
+]
+
+body = "Effects mutate game state. They appear in focus rewards, event options, decisions, on_actions, scripted effects, history setup, and GUI clicks. Generated effects should be minimal, scoped, and idempotent when possible."
+
+syntax_blocks = [
+    "completion_reward = { add_political_power = 50 }",
+    "option = { add_stability = 0.05 }",
+    "set_country_flag = my_flag"
+]
+
+relationships = [
+    "Effects are guarded by triggers; scripted_effects share reusable effect chains; on_actions run effects in event-driven contexts."
+]
+
+validation = [
+    "Check whether an effect is country, state, character, or unit scoped.",
+    "Avoid repeated additive effects unless the trigger prevents repetition.",
+    "Name flags and variables with mod prefixes.",
+    "Hide helper-only triggers, effects, or calculation modifiers from player-facing UI whenever the file type supports a hidden form."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Effects",
+    "https://hoi4doc.dev"
+]

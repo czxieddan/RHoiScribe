@@ -22,123 +22,37 @@
 use std::{error::Error, fmt};
 
 use rmcp::model::{Annotated, RawResource, ReadResourceResult, Resource, ResourceContents};
-use serde::{Deserialize, Serialize};
+
+mod knowledge;
+
+pub use knowledge::{KnowledgeCatalog, KnowledgeLoadError, KnowledgeTopic};
 
 pub const MODULE_PURPOSE: &str = "versioned HOI4 knowledge resources";
 pub const LATEST_UPDATE_URI: &str = "rhoiscribe://hoi4/latest-update";
 pub const KNOWLEDGE_CATALOG_URI: &str = "rhoiscribe://hoi4/knowledge/catalog";
 pub const KNOWLEDGE_TOPIC_URI_PREFIX: &str = "rhoiscribe://hoi4/knowledge/";
 
-const EMBEDDED_CATALOG: &str = include_str!("../../resources/knowledge/hoi4/catalog.json");
-const LATEST_UPDATE: &str = include_str!("../../resources/knowledge/hoi4/latest-update.md");
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct KnowledgeTopic {
-    pub id: String,
-    pub title: String,
-    pub category: String,
-    pub file_types: Vec<String>,
-    pub tags: Vec<String>,
-    pub body: String,
-    #[serde(default)]
-    pub syntax_blocks: Vec<String>,
-    #[serde(default)]
-    pub relationships: Vec<String>,
-    #[serde(default)]
-    pub validation: Vec<String>,
-    #[serde(default)]
-    pub source_refs: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct KnowledgeCatalog {
-    pub topics: Vec<KnowledgeTopic>,
-}
-
-impl KnowledgeCatalog {
-    pub fn load_embedded() -> Result<Self, serde_json::Error> {
-        serde_json::from_str(EMBEDDED_CATALOG)
-    }
-
-    pub fn topic(&self, id: &str) -> Option<&KnowledgeTopic> {
-        self.topics.iter().find(|topic| topic.id == id)
-    }
-
-    pub fn by_file_type(&self, file_type: &str) -> Vec<&KnowledgeTopic> {
-        let needle = file_type.to_ascii_lowercase();
-
-        self.topics
-            .iter()
-            .filter(|topic| {
-                topic
-                    .file_types
-                    .iter()
-                    .any(|candidate| candidate.eq_ignore_ascii_case(&needle))
-            })
-            .collect()
-    }
-
-    pub fn search(&self, query: &str) -> Vec<&KnowledgeTopic> {
-        let terms = query
-            .split_whitespace()
-            .map(str::to_ascii_lowercase)
-            .collect::<Vec<_>>();
-
-        if terms.is_empty() {
-            return Vec::new();
-        }
-
-        self.topics
-            .iter()
-            .filter(|topic| {
-                let haystack = topic.search_haystack();
-                terms.iter().all(|term| haystack.contains(term))
-            })
-            .collect()
-    }
-}
-
-impl KnowledgeTopic {
-    fn search_haystack(&self) -> String {
-        format!(
-            "{} {} {} {} {}",
-            self.id,
-            self.title,
-            self.category,
-            self.file_types.join(" "),
-            self.tags.join(" "),
-        )
-        .to_ascii_lowercase()
-            + " "
-            + &self.body.to_ascii_lowercase()
-            + " "
-            + &self.syntax_blocks.join(" ").to_ascii_lowercase()
-            + " "
-            + &self.relationships.join(" ").to_ascii_lowercase()
-            + " "
-            + &self.validation.join(" ").to_ascii_lowercase()
-            + " "
-            + &self.source_refs.join(" ").to_ascii_lowercase()
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResourceCatalog {
     knowledge: KnowledgeCatalog,
-    latest_update: &'static str,
+    latest_update: knowledge::LatestUpdateResource,
+    catalog_index: String,
 }
 
 #[derive(Debug)]
 pub enum ResourceReadError {
     UnknownUri(String),
-    SerializeCatalog(serde_json::Error),
 }
 
 impl ResourceCatalog {
-    pub fn load_embedded() -> Result<Self, serde_json::Error> {
+    pub fn load_embedded() -> Result<Self, KnowledgeLoadError> {
+        let knowledge = KnowledgeCatalog::load_embedded()?;
+        let catalog_index = knowledge.catalog_index_toml()?;
+
         Ok(Self {
-            knowledge: KnowledgeCatalog::load_embedded()?,
-            latest_update: LATEST_UPDATE,
+            knowledge,
+            latest_update: knowledge::load_latest_update()?,
+            catalog_index,
         })
     }
 
@@ -147,9 +61,9 @@ impl ResourceCatalog {
             text_resource(
                 LATEST_UPDATE_URI,
                 "hoi4_latest_update",
-                "HOI4 latest update snapshot",
+                &self.latest_update.title,
                 "Static local snapshot of the latest visible official HOI4 update.",
-                self.latest_update,
+                &self.latest_update.body,
                 "text/markdown",
             ),
             text_resource(
@@ -157,8 +71,8 @@ impl ResourceCatalog {
                 "hoi4_knowledge_catalog",
                 "HOI4 knowledge catalog",
                 "Structured index of bundled HOI4 Modding knowledge topics.",
-                EMBEDDED_CATALOG,
-                "application/json",
+                &self.catalog_index,
+                "application/toml",
             ),
         ];
 
@@ -179,9 +93,8 @@ impl ResourceCatalog {
 
     pub fn read_text(&self, uri: &str) -> Result<String, ResourceReadError> {
         match uri {
-            LATEST_UPDATE_URI => Ok(self.latest_update.to_string()),
-            KNOWLEDGE_CATALOG_URI => serde_json::to_string_pretty(&self.knowledge)
-                .map_err(ResourceReadError::SerializeCatalog),
+            LATEST_UPDATE_URI => Ok(self.latest_update.body.clone()),
+            KNOWLEDGE_CATALOG_URI => Ok(self.catalog_index.clone()),
             _ => {
                 let Some(topic_id) = uri.strip_prefix(KNOWLEDGE_TOPIC_URI_PREFIX) else {
                     return Err(ResourceReadError::UnknownUri(uri.to_string()));
@@ -199,7 +112,7 @@ impl ResourceCatalog {
 
     pub fn read_mcp_resource(&self, uri: &str) -> Result<ReadResourceResult, ResourceReadError> {
         let mime_type = if uri == KNOWLEDGE_CATALOG_URI {
-            "application/json"
+            "application/toml"
         } else {
             "text/markdown"
         };
@@ -214,13 +127,6 @@ impl fmt::Display for ResourceReadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ResourceReadError::UnknownUri(uri) => write!(formatter, "unknown resource `{}`", uri),
-            ResourceReadError::SerializeCatalog(error) => {
-                write!(
-                    formatter,
-                    "failed to serialize knowledge catalog: {}",
-                    error
-                )
-            }
         }
     }
 }

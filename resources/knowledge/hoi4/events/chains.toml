@@ -1,0 +1,40 @@
+id = "events.chains"
+
+title = "Event chains and delayed follow-up"
+
+category = "event"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "event_chain",
+    "country_event",
+    "days",
+    "random_days",
+    "FROM"
+]
+
+body = "Event chains pass context through scopes and delayed event calls. Generators need to preserve ROOT/FROM expectations and avoid losing the original actor when chaining through states or characters."
+
+syntax_blocks = [
+    "country_event = { id = my_mod.2 days = 7 random_days = 3 }",
+    "FROM = { country_event = my_mod.3 }"
+]
+
+relationships = [
+    "Scope handling controls who receives follow-up events.",
+    "Flags often prevent duplicate branches."
+]
+
+validation = [
+    "Document sender and receiver scope.",
+    "Set flags before delayed events if repetition matters.",
+    "Localise every branch."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Event_modding",
+    "https://hoi4.paradoxwikis.com/Scopes"
+]

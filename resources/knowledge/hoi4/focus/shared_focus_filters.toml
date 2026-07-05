@@ -1,0 +1,39 @@
+id = "focus.shared_focus_filters"
+
+title = "Shared focuses, filters, and AI focus behavior"
+
+category = "focus"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "shared_focus",
+    "search_filters",
+    "ai_will_do",
+    "bypass"
+]
+
+body = "Focus trees can use shared focuses, filters, bypasses, and AI weights to manage large trees. Generators should represent focus intent separately from layout so AI and branch constraints can be generated consistently."
+
+syntax_blocks = [
+    "search_filters = { FOCUS_FILTER_POLITICAL }",
+    "ai_will_do = { factor = 1 modifier = { factor = 0 has_war = yes } }"
+]
+
+relationships = [
+    "AI weights consume triggers.",
+    "Shared focus definitions interact with tree-specific placement."
+]
+
+validation = [
+    "Avoid AI factor = 0 unless intentionally disabling.",
+    "Keep filters aligned with reward type.",
+    "Do not generate impossible prerequisite chains."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/National_focus_modding",
+    "https://hoi4.paradoxwikis.com/AI_modding"
+]

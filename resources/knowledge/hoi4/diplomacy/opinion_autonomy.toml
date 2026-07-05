@@ -1,0 +1,51 @@
+id = "diplomacy.opinion_autonomy"
+
+title = "Diplomacy, opinion, factions, and autonomy"
+
+category = "diplomacy"
+
+file_types = [
+    "txt",
+    "yml"
+]
+
+tags = [
+    "opinion_modifier",
+    "faction",
+    "autonomy",
+    "relations",
+    "war_goal"
+]
+
+body = "Diplomacy scripting covers opinions, factions, guarantees, war goals, autonomy state, subjects, and scripted diplomatic effects. Generated content must distinguish target and actor scopes. For declare_war_on, the current country scope is the declarer and target is the country being declared on; always provide a war goal type such as annex_everything, puppet_wargoal, take_state_focus, or topple_government unless the user's existing project convention intentionally wraps the type elsewhere. For create_wargoal, the current country scope receives the wargoal, target is the wargoal target, and type is the wargoal kind; when a state-specific type is used, also provide the required generator state field expected by the effect. For add_to_faction, the current scope is the faction leader or faction owner executing the effect, and the named or scoped country is pulled into the faction; if the scripted context currently scopes to the country that should join, first switch to the leader scope and pass the joining country as the effect argument. For dismantle_faction, the current scope should be the faction leader whose faction is removed. Avoid ambiguous wording such as 'join faction with X' without stating which country is leader and which country is being added."
+
+syntax_blocks = [
+    "add_opinion_modifier = { target = TAG modifier = my_opinion }",
+    "create_faction = my_faction_key",
+    "add_to_faction = FROM",
+    "declare_war_on = { target = FROM type = annex_everything }",
+    "create_wargoal = { target = FROM type = puppet_wargoal }",
+    "set_autonomy = { target = TAG autonomy_state = autonomy_puppet }",
+    "dismantle_faction = yes"
+]
+
+relationships = [
+    "Opinion modifiers need definitions and localisation.",
+    "War goals and factions often come from events or focuses.",
+    "Events, decisions, focuses, and on_actions often provide FROM as the diplomatic target; verify whether FROM is the target country, faction leader, or war owner before writing effects.",
+    "on_declare_war and on_war_relation_added can help react to wars after declare_war_on or normal diplomatic war starts."
+]
+
+validation = [
+    "Check target scopes.",
+    "For declare_war_on, verify the current scope is the attacker, target is the defender, and type is present.",
+    "For create_wargoal, verify the current scope owns the wargoal, target is the intended target, and type is present.",
+    "For add_to_faction, verify the current scope is the faction leader and the effect argument is the country being pulled into the faction.",
+    "Localise opinion modifiers and faction names.",
+    "Avoid invalid autonomy state IDs."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Effects",
+    "https://hoi4.paradoxwikis.com/Modifiers"
+]

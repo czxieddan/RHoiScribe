@@ -1,0 +1,41 @@
+id = "map.provinces_terrain"
+
+title = "Map provinces, terrain, and continent data"
+
+category = "map"
+
+file_types = [
+    "bmp",
+    "csv",
+    "txt"
+]
+
+tags = [
+    "provinces",
+    "terrain",
+    "continent",
+    "map"
+]
+
+body = "Map modding covers province definitions, terrain, continents, heightmaps, rivers, and related files. It is a high-risk domain because visual files and CSV data must agree exactly."
+
+syntax_blocks = [
+    "definition.csv",
+    "terrain.txt",
+    "provinces.bmp"
+]
+
+relationships = [
+    "States reference provinces.",
+    "Strategic regions and supply systems rely on map data."
+]
+
+validation = [
+    "Do not generate map edits without explicit user confirmation.",
+    "Keep province IDs unique.",
+    "Validate CSV and bitmap consistency externally."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Map_modding"
+]

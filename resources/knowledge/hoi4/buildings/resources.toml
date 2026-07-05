@@ -1,0 +1,42 @@
+id = "buildings.resources"
+
+title = "Buildings, resources, and state modifiers"
+
+category = "economy"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "buildings",
+    "resources",
+    "state",
+    "infrastructure",
+    "arms_factory"
+]
+
+body = "Buildings and resources are commonly set in state history or modified by effects. Generated economy content should distinguish permanent state setup from scripted construction and temporary modifiers."
+
+syntax_blocks = [
+    "buildings = { infrastructure = 3 arms_factory = 2 }",
+    "resources = { steel = 20 oil = 5 }",
+    "add_extra_state_shared_building_slots = 1"
+]
+
+relationships = [
+    "State history sets initial values.",
+    "Effects can add construction or slots.",
+    "Modifiers alter output factors."
+]
+
+validation = [
+    "Use valid building keys.",
+    "Keep resource values numeric.",
+    "Avoid state file replacement unless intended."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/State_modding",
+    "https://hoi4.paradoxwikis.com/Effects"
+]

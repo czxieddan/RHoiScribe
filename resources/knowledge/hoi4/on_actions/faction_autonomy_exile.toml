@@ -1,0 +1,49 @@
+id = "on_actions.faction_autonomy_exile"
+
+title = "On action faction, autonomy, and government-in-exile hooks"
+
+category = "on_actions"
+
+file_types = [
+    "txt"
+]
+
+tags = [
+    "on_create_faction",
+    "on_faction_formed",
+    "on_offer_join_faction",
+    "on_join_faction",
+    "on_assume_faction_leadership",
+    "on_leave_faction",
+    "on_subject_annexed",
+    "on_subject_free",
+    "on_subject_autonomy_level_change",
+    "on_government_exiled",
+    "on_host_changed_from_capitulation",
+    "on_exile_government_reinstated"
+]
+
+body = "Faction hooks: on_create_faction fires when a country creates a faction, with FROM as the country that joins where supplied. on_faction_formed fires when a faction is formed. on_offer_join_faction has FROM as invited country and THIS/ROOT as faction leader. on_join_faction has FROM as faction leader and THIS/ROOT as joining country. on_assume_faction_leadership has ROOT as new faction leader and FROM as old leader. on_leave_faction has ROOT as country leaving and FROM as faction leader. Autonomy hooks: on_subject_annexed, on_subject_free, and on_subject_autonomy_level_change use ROOT as subject and FROM as overlord or previous overlord. Government-in-exile hooks: on_government_exiled uses ROOT government in exile and FROM host; on_host_changed_from_capitulation uses ROOT government in exile, FROM new host, and FROM.FROM old host; on_exile_government_reinstated uses ROOT returned government and FROM previous host."
+
+syntax_blocks = [
+    "on_offer_join_faction = { effect = { # ROOT/THIS: faction leader; FROM: invited country } }",
+    "on_join_faction = { effect = { # ROOT/THIS: joining country; FROM: faction leader } }",
+    "on_subject_autonomy_level_change = { effect = { # ROOT: subject; FROM: overlord } }",
+    "on_host_changed_from_capitulation = { effect = { # ROOT: exile government; FROM: new host; FROM.FROM: old host } }"
+]
+
+relationships = [
+    "Faction offer and join hooks reverse the meaning of ROOT/FROM compared with each other.",
+    "Subject hooks are useful for autonomy systems but should not assume peace-conference context.",
+    "Exile hooks are three-party when host changes from capitulation."
+]
+
+validation = [
+    "State ROOT/FROM direction in comments for faction hooks because offer/join naming is easy to misread.",
+    "Gate subject autonomy effects by autonomy state if only a specific level matters.",
+    "Use FROM.FROM only in hooks documented to provide it, such as host change from capitulation."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/On_actions"
+]

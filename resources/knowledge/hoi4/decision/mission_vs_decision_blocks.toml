@@ -1,0 +1,54 @@
+id = "decision.mission_vs_decision_blocks"
+
+title = "Decision, mission, targeted decision, and state target block differences"
+
+category = "decision"
+
+file_types = [
+    "txt",
+    "yml"
+]
+
+tags = [
+    "decisions",
+    "mission",
+    "targeted_decision",
+    "state_target",
+    "activation",
+    "available",
+    "visible",
+    "allowed",
+    "target_trigger",
+    "days_mission_timeout",
+    "timeout_effect"
+]
+
+body = "普通决议 is selected by the player or AI and usually gates use with visible/available/allowed before running complete_effect. 任务 uses the same decision file family but becomes a timed mission when days_mission_timeout is present: activation starts the timer, available describes the success condition, complete_effect runs on success, and timeout_effect runs on failure. targeted_decision adds a country target; in target filters and effects, ROOT is the owner country and FROM is the target country. state_target or target_state style blocks add a state target; when a secondary state scope exists, generated code must document whether FROM.FROM or a named event target is the state. Do not reuse ordinary decision semantics blindly inside missions."
+
+syntax_blocks = [
+    "my_category = { my_decision = { visible = { has_country_flag = my_mod_unlocked } available = { has_political_power > 25 } cost = 25 complete_effect = { add_political_power = -25 } } }",
+    "my_category = { my_mission = { activation = { has_war = yes } available = { controls_state = 64 } days_mission_timeout = 100 is_good = yes complete_effect = { add_political_power = 50 } timeout_effect = { add_political_power = -50 } } }",
+    "targeted_decision = { target_root_trigger = { has_war = yes } target_trigger = { is_neighbor_of = ROOT } complete_effect = { create_wargoal = { type = annex_everything target = FROM } } }",
+    "state_target = { target_root_trigger = { always = yes } target_trigger = { is_owned_by = ROOT } complete_effect = { FROM.FROM = { add_core_of = ROOT } } }"
+]
+
+relationships = [
+    "Decision categories can have their own allowed/visible/priority logic before individual decisions are considered.",
+    "Missions and targeted missions are defined by days_mission_timeout and need timeout/cancel semantics.",
+    "Targeted decisions use FROM for the selected country target, which can also be referenced in localisation as [From.GetNameDef].",
+    "State-targeted logic is more performance-sensitive because target_trigger may be evaluated across many states."
+]
+
+validation = [
+    "For ordinary decisions, distinguish visible as display gating and available as click gating.",
+    "For missions, treat activation as start condition and available as objective/success condition.",
+    "Use cancel_trigger/cancel_effect only when cancellation should differ from timeout or success.",
+    "Document ROOT/FROM/FROM.FROM in every targeted decision or mission plan.",
+    "Use fixed_random_seed = no when a repeatable decision intentionally needs fresh random_list results.",
+    "Avoid expensive target_trigger scans; prefer activate_targeted_decision when the target is already known."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Decision_modding",
+    "https://hoi4.paradoxwikis.com/Scopes"
+]

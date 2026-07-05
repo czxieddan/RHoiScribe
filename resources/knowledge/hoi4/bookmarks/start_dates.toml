@@ -1,0 +1,38 @@
+id = "bookmarks.start_dates"
+
+title = "Bookmarks and start dates"
+
+category = "bookmark"
+
+file_types = [
+    "txt",
+    "yml"
+]
+
+tags = [
+    "bookmarks",
+    "start_date",
+    "history",
+    "selectable"
+]
+
+body = "Bookmarks define scenario selection, highlighted countries, start dates, and visible descriptions. Generated bookmarks must match history setup and localisation."
+
+syntax_blocks = [
+    "bookmarks = { bookmark = { date = 1936.1.1 default = yes selectable = { TAG } } }"
+]
+
+relationships = [
+    "Country and state history may contain date-specific blocks.",
+    "Bookmarks depend on country tags and localisation."
+]
+
+validation = [
+    "Ensure start date has matching history.",
+    "Localise bookmark and country descriptions.",
+    "Check selectable tags exist."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Bookmark_modding"
+]

@@ -1,0 +1,41 @@
+id = "technology.tech_trees"
+
+title = "Technology trees and research"
+
+category = "technology"
+
+file_types = [
+    "txt",
+    "gfx",
+    "yml"
+]
+
+tags = [
+    "technology",
+    "research",
+    "path",
+    "folders",
+    "enable_equipment"
+]
+
+body = "Technology files define researchable items, folders, paths, prerequisites, bonuses, and equipment unlocks. Generated techs must integrate with folders, icons, localisation, and equipment or unit systems."
+
+syntax_blocks = [
+    "technologies = { my_tech = { area = industry start_year = 1936 cost = 1.0 } }",
+    "enable_equipment = { infantry_equipment = yes }"
+]
+
+relationships = [
+    "Technologies unlock equipment and modify units.",
+    "Focuses and decisions can grant research bonuses."
+]
+
+validation = [
+    "Check folder and area.",
+    "Use valid start_year and cost.",
+    "Localise tech name and description."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Technology_modding"
+]

@@ -1,0 +1,51 @@
+id = "script.expressions_math"
+
+title = "Expressions, math functions, and variable calculations"
+
+category = "script"
+
+file_types = [
+    "txt",
+    "gui",
+    "yml"
+]
+
+tags = [
+    "variables",
+    "temporary variables",
+    "math expressions",
+    "math functions",
+    "1.19.1+",
+    "clamp",
+    "set_temp_variable"
+]
+
+body = "Available in Hearts of Iron IV 1.19.1+. Math expressions let agents collapse long temporary-variable calculation chains into a value block that runs math functions in written order. The value key is the accumulator; add, multiply, clamp, if, lerp, trigonometric functions, comparisons, and boolean operators mutate that accumulator without normal arithmetic precedence. Boolean math functions return 1.0 or 0.0. Use set_temp_variable for trigger-safe scratch calculations and set_variable for persistent scoped results. Variables may hold numeric values, database-object IDs, or token values; use var: when a variable is used as a scope or where parser ambiguity would otherwise produce noisy logs. Null coalescing like cost = var_name?100 is available where the language accepts variable values. Prefer temporary variables for one-off trigger and tooltip calculations, then hide implementation-only effect chains with hidden_effect or scripted triggers when players should not see plumbing."
+
+syntax_blocks = [
+    "set_variable = {\n    x = { value = y sin = yes }\n}",
+    "set_temp_variable = {\n    temp_score = {\n        value = base_score\n        add = bonus_score\n        clamp = { min = 0 max = 100 }\n    }\n}",
+    "set_temp_variable = {\n    temp_result = {\n        value = x\n        if = { limit = { value = x greater_than = 10 } add = 100 }\n        else = { subtract = 1 }\n    }\n}",
+    "custom_trigger_tooltip = {\n    tooltip = MY_MOD_SCORE_CHECK_TT\n    set_temp_variable = { temp_required = { value = global.base_required multiply = 1.25 round = yes } }\n    check_variable = { current_score > temp_required }\n}"
+]
+
+relationships = [
+    "Use with script.variables for regular/temp variable scoping and token-valued variables.",
+    "Use with script.mtth_variables when a dynamic MTTH factor needs computed scratch values.",
+    "Use with scripted_triggers.effects when a reusable calculation needs a hidden trigger or effect wrapper.",
+    "Localisation can display variables with [?var_name] and token values with GetTokenKey/GetTokenLocalizedKey."
+]
+
+validation = [
+    "Gate expression/math-function guidance to HOI4 1.19.1+ unless the user's installed game version proves support.",
+    "Do not assume arithmetic precedence inside a math expression; functions execute in block order.",
+    "Follow approximated functions such as atan, atan2, log, pow, or root with round = yes when exact integer output matters.",
+    "Use var: when a variable is acting as a scope, especially on the left side of scoped effect blocks.",
+    "Do not expose implementation-only temporary variable calculations to player tooltips; hide them or wrap them in clear scripted triggers."
+]
+
+source_refs = [
+    "Paradox Wiki Data structures: Variables, Math expressions, Math functions, MTTH variables; fetched 2026-07-05 from https://hoi4.paradoxwikis.com/Data_structures",
+    "Local export: F:/hoi4_paradoxwiki_data_structures/Data_structures.txt",
+    "Maintainer requirement: expression and math function variable features are available in HOI4 1.19.1+"
+]

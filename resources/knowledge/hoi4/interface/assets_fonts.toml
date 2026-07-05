@@ -1,0 +1,45 @@
+id = "interface.assets_fonts"
+
+title = "Interface assets, fonts, and sprite sheets"
+
+category = "interface"
+
+file_types = [
+    "gfx",
+    "gui",
+    "font",
+    "png",
+    "dds"
+]
+
+tags = [
+    "fonts",
+    "sprite_sheet",
+    "texturefile",
+    "quadTextureSprite",
+    "alwaystransparent"
+]
+
+body = "Interface assets include textures, fonts, sprite sheets, and definitions for GUI controls. Generated asset references should be stable and mod-local to avoid collisions with vanilla interface files."
+
+syntax_blocks = [
+    "font = \"hoi_18mbs\"",
+    "quadTextureSprite = \"GFX_my_button\"",
+    "alwaystransparent = yes"
+]
+
+relationships = [
+    "GUI controls consume GFX sprites.",
+    "Localisation text must fit textboxes.",
+    "Asset dimensions influence layout."
+]
+
+validation = [
+    "Avoid referencing missing textures.",
+    "Check text width and maxWidth.",
+    "Use mod-specific asset directories."
+]
+
+source_refs = [
+    "https://hoi4.paradoxwikis.com/Interface_modding"
+]
