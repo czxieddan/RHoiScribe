@@ -182,6 +182,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
+dependencies = [
+ "crc-catalog",
+]
+
+[[package]]
+name = "crc-catalog"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
+
+[[package]]
 name = "crypto-common"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -721,14 +736,15 @@ dependencies = [
 [[package]]
 name = "rnmdb-common"
 version = "0.1.0"
-source = "git+https://github.com/czxieddan/RNovModularDB.git?rev=a7a2b5fdc125b1e0b4f3628c25b09dc84d4ab2c6#a7a2b5fdc125b1e0b4f3628c25b09dc84d4ab2c6"
+source = "git+https://github.com/czxieddan/RNovModularDB.git?rev=a06574c5ed655135c58db8e4edb7c3bdbee331ca#a06574c5ed655135c58db8e4edb7c3bdbee331ca"
 
 [[package]]
 name = "rnmdb-storage"
 version = "0.1.0"
-source = "git+https://github.com/czxieddan/RNovModularDB.git?rev=a7a2b5fdc125b1e0b4f3628c25b09dc84d4ab2c6#a7a2b5fdc125b1e0b4f3628c25b09dc84d4ab2c6"
+source = "git+https://github.com/czxieddan/RNovModularDB.git?rev=a06574c5ed655135c58db8e4edb7c3bdbee331ca#a06574c5ed655135c58db8e4edb7c3bdbee331ca"
 dependencies = [
  "chacha20poly1305",
+ "crc",
  "rnmdb-common",
 ]
 
