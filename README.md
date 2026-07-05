@@ -72,8 +72,8 @@ At a high level, it helps agents with:
 - fast encoding, formatting, and media convention checks
 - safe edits to existing files while respecting workspace conventions
 - Rchadow-assisted HOI4 debug launch preparation
-- RNMDB-backed cross-IDE agent preferences under `.rhoiscribe`
-- tool-call audit logs with regex-filtered export
+- RNMDB-backed cross-IDE agent state under `.rhoiscribe`
+- tool-call audit logs with regex-filtered export from the same state database
 - experimental GUI/GFX asset creation when the user approves new procedural art
 
 The bundled Skill package is the quickest way to give compatible agents local access without editing MCP configuration. For complete functionality and a smoother experience, use the MCP server when your agent supports it.

@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value, json};
 
 use super::{
+    preferences::state_database_error,
     preferences::{PreferenceMutationLock, open_preference_store, preference_store_path},
     rnmdb_store::{RnmdbSingleFilePageStore, clean_display_path},
 };
@@ -119,9 +120,10 @@ pub(crate) fn record_tool_call(
     append: ToolLogAppend,
 ) -> Result<(), String> {
     let store_path = preference_store_path(store_path);
-    let _lock = PreferenceMutationLock::acquire(&store_path)?;
+    let _lock = PreferenceMutationLock::acquire(&store_path)
+        .map_err(|error| state_database_error(&store_path, error))?;
     let store = open_preference_store(&store_path)?;
-    let mut entries = read_tool_log_entries(&store)?;
+    let mut entries = read_tool_log_entries(&store, &store_path)?;
     let sequence = next_sequence(&entries);
 
     entries.push(ToolLogEntry {
@@ -134,13 +136,13 @@ pub(crate) fn record_tool_call(
         error: append.error,
     });
     trim_old_entries(&mut entries);
-    write_tool_log_entries(&store, &entries)
+    write_tool_log_entries(&store, &store_path, &entries)
 }
 
 pub fn query_tool_logs(request: ToolLogQueryRequest) -> Result<ToolLogQueryResult, String> {
     let store_path = preference_store_path(request.store_path.as_deref());
     let store = open_preference_store(&store_path)?;
-    let entries = read_tool_log_entries(&store)?;
+    let entries = read_tool_log_entries(&store, &store_path)?;
     let matcher = compile_log_regex(request.pattern.as_deref())?;
     let limit = query_limit(request.limit, DEFAULT_TOOL_LOG_LIMIT);
     let total_entries = entries.len();
@@ -181,7 +183,7 @@ fn filtered_tool_log_entries(
     limit: usize,
 ) -> Result<Vec<ToolLogEntry>, String> {
     let store = open_preference_store(store_path)?;
-    let entries = read_tool_log_entries(&store)?;
+    let entries = read_tool_log_entries(&store, store_path)?;
     let matcher = compile_log_regex(pattern)?;
     let (_, entries) = filter_log_entries(&entries, matcher.as_ref(), limit)?;
     Ok(entries)
@@ -215,10 +217,15 @@ fn tool_log_export_payload(store_path: &Path, entries: &[ToolLogEntry]) -> Value
     })
 }
 
-fn read_tool_log_entries(store: &RnmdbSingleFilePageStore) -> Result<Vec<ToolLogEntry>, String> {
-    match read_tool_log_index(store)? {
+fn read_tool_log_entries(
+    store: &RnmdbSingleFilePageStore,
+    path: &Path,
+) -> Result<Vec<ToolLogEntry>, String> {
+    match read_tool_log_index(store, path)? {
         Some(index) if !index.is_empty() => {
-            decode_tool_log_entries(read_tool_log_bytes(store, &index)?)
+            decode_tool_log_entries(read_tool_log_bytes(store, path, &index)?).map_err(|error| {
+                state_database_error(path, format!("failed to decode tool log entries: {error}"))
+            })
         }
         _ => Ok(Vec::new()),
     }
@@ -226,20 +233,31 @@ fn read_tool_log_entries(store: &RnmdbSingleFilePageStore) -> Result<Vec<ToolLog
 
 fn read_tool_log_index(
     store: &RnmdbSingleFilePageStore,
+    path: &Path,
 ) -> Result<Option<StoredToolLogIndex>, String> {
     store
-        .read_payload_page(TOOL_LOG_INDEX_PAGE_ID)?
+        .read_payload_page(TOOL_LOG_INDEX_PAGE_ID)
+        .map_err(|error| {
+            state_database_error(path, format!("failed to read tool log index page: {error}"))
+        })?
         .map(|payload| decode_length_prefixed_json::<StoredToolLogIndex>(&payload))
         .transpose()
+        .map_err(|error| {
+            state_database_error(
+                path,
+                format!("failed to decode tool log index page: {error}"),
+            )
+        })
 }
 
 fn read_tool_log_bytes(
     store: &RnmdbSingleFilePageStore,
+    path: &Path,
     index: &StoredToolLogIndex,
 ) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::with_capacity(index.byte_len);
     for page_offset in 0..index.page_count {
-        bytes.extend_from_slice(&read_tool_log_page(store, page_offset)?);
+        bytes.extend_from_slice(&read_tool_log_page(store, path, page_offset)?);
     }
     bytes.truncate(index.byte_len);
     Ok(bytes)
@@ -247,12 +265,20 @@ fn read_tool_log_bytes(
 
 fn read_tool_log_page(
     store: &RnmdbSingleFilePageStore,
+    path: &Path,
     page_offset: u64,
 ) -> Result<Vec<u8>, String> {
     let page_id = TOOL_LOG_DATA_START_PAGE_ID + page_offset;
     store
-        .read_payload_page(page_id)?
+        .read_payload_page(page_id)
+        .map_err(|error| {
+            state_database_error(
+                path,
+                format!("failed to read tool log data page {page_id}: {error}"),
+            )
+        })?
         .ok_or_else(|| format!("stored tool log page {page_id} is missing"))
+        .map_err(|error| state_database_error(path, error))
 }
 
 fn decode_tool_log_entries(bytes: Vec<u8>) -> Result<Vec<ToolLogEntry>, String> {
@@ -261,16 +287,27 @@ fn decode_tool_log_entries(bytes: Vec<u8>) -> Result<Vec<ToolLogEntry>, String> 
 
 fn write_tool_log_entries(
     store: &RnmdbSingleFilePageStore,
+    path: &Path,
     entries: &[ToolLogEntry],
 ) -> Result<(), String> {
-    let encoded = serde_json::to_vec(entries).map_err(|error| error.to_string())?;
+    let encoded = serde_json::to_vec(entries).map_err(|error| {
+        state_database_error(path, format!("failed to encode tool logs: {error}"))
+    })?;
     let page_size = store.page_size_bytes();
     let page_count = encoded.len().div_ceil(page_size);
 
     for (index, chunk) in encoded.chunks(page_size).enumerate() {
         let mut payload = vec![0_u8; page_size];
         payload[..chunk.len()].copy_from_slice(chunk);
-        store.write_payload_page(TOOL_LOG_DATA_START_PAGE_ID + index as u64, payload)?;
+        let page_id = TOOL_LOG_DATA_START_PAGE_ID + index as u64;
+        store
+            .write_payload_page(page_id, payload)
+            .map_err(|error| {
+                state_database_error(
+                    path,
+                    format!("failed to write tool log data page {page_id}: {error}"),
+                )
+            })?;
     }
 
     let index = StoredToolLogIndex {
@@ -278,8 +315,20 @@ fn write_tool_log_entries(
         byte_len: encoded.len(),
         page_count: page_count as u64,
     };
-    let index_payload = encode_length_prefixed_json(&index, page_size)?;
-    store.write_payload_page(TOOL_LOG_INDEX_PAGE_ID, index_payload)
+    let index_payload = encode_length_prefixed_json(&index, page_size).map_err(|error| {
+        state_database_error(
+            path,
+            format!("failed to encode tool log index page: {error}"),
+        )
+    })?;
+    store
+        .write_payload_page(TOOL_LOG_INDEX_PAGE_ID, index_payload)
+        .map_err(|error| {
+            state_database_error(
+                path,
+                format!("failed to write tool log index page: {error}"),
+            )
+        })
 }
 
 fn decode_length_prefixed_json<T>(payload: &[u8]) -> Result<T, String>

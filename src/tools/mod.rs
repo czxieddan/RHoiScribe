@@ -480,7 +480,16 @@ pub enum ToolError {
     UnknownTool(String),
     InvalidArguments(serde_json::Error),
     InvalidRequest(String),
+    StateDatabaseFailed(String),
     WriteFailed(std::io::Error),
+}
+
+fn map_state_database_error(message: String) -> ToolError {
+    if preferences::is_state_database_error(&message) {
+        ToolError::StateDatabaseFailed(message)
+    } else {
+        ToolError::InvalidRequest(message)
+    }
 }
 
 pub struct ToolEngine;
@@ -501,8 +510,16 @@ impl ToolCatalog {
     pub fn call(&self, name: &str, arguments: JsonObject) -> Result<CallToolResult, ToolError> {
         let arguments_for_log = Value::Object(arguments.clone());
         let result = self.call_without_logging(name, arguments);
-        self.record_tool_log(name, arguments_for_log, &result);
-        result
+        match self.record_tool_log(name, arguments_for_log, &result) {
+            Ok(()) => result,
+            Err(log_error) => match result {
+                Ok(_) => Err(log_error),
+                Err(tool_error) => Err(ToolError::StateDatabaseFailed(format!(
+                    "{}; tool result also failed: {}",
+                    log_error, tool_error
+                ))),
+            },
+        }
     }
 
     fn call_without_logging(
@@ -523,12 +540,12 @@ impl ToolCatalog {
         name: &str,
         arguments: Value,
         result: &Result<CallToolResult, ToolError>,
-    ) {
+    ) -> Result<(), ToolError> {
         let store_path = arguments
             .as_object()
             .and_then(tool_logs::tool_log_store_path_from_arguments);
         let (success, result, error) = tool_log_outcome(result);
-        let _ = tool_logs::record_tool_call(
+        tool_logs::record_tool_call(
             store_path.as_deref(),
             tool_logs::ToolLogAppend {
                 tool_name: name.to_string(),
@@ -537,7 +554,13 @@ impl ToolCatalog {
                 result,
                 error,
             },
-        );
+        )
+        .map_err(|error| {
+            ToolError::StateDatabaseFailed(format!(
+                "failed to record RHoiScribe tool call `{}` in the state database: {}",
+                name, error
+            ))
+        })
     }
 }
 
@@ -719,29 +742,29 @@ impl ToolEngine {
     pub fn list_agent_preferences(
         request: ListAgentPreferencesRequest,
     ) -> Result<AgentPreferencesResult, ToolError> {
-        preferences::list_agent_preferences(request).map_err(ToolError::InvalidRequest)
+        preferences::list_agent_preferences(request).map_err(map_state_database_error)
     }
 
     pub fn set_agent_preference(
         request: SetAgentPreferenceRequest,
     ) -> Result<AgentPreferenceMutationResult, ToolError> {
-        preferences::set_agent_preference(request).map_err(ToolError::InvalidRequest)
+        preferences::set_agent_preference(request).map_err(map_state_database_error)
     }
 
     pub fn delete_agent_preference(
         request: DeleteAgentPreferenceRequest,
     ) -> Result<AgentPreferenceMutationResult, ToolError> {
-        preferences::delete_agent_preference(request).map_err(ToolError::InvalidRequest)
+        preferences::delete_agent_preference(request).map_err(map_state_database_error)
     }
 
     pub fn query_tool_logs(request: ToolLogQueryRequest) -> Result<ToolLogQueryResult, ToolError> {
-        tool_logs::query_tool_logs(request).map_err(ToolError::InvalidRequest)
+        tool_logs::query_tool_logs(request).map_err(map_state_database_error)
     }
 
     pub fn export_tool_logs(
         request: ToolLogExportRequest,
     ) -> Result<ToolLogExportResult, ToolError> {
-        tool_logs::export_tool_logs(request).map_err(ToolError::InvalidRequest)
+        tool_logs::export_tool_logs(request).map_err(map_state_database_error)
     }
 
     pub fn index_hoi4_project(
@@ -811,6 +834,9 @@ impl fmt::Display for ToolError {
             ToolError::UnknownTool(name) => write!(formatter, "unknown tool `{}`", name),
             ToolError::InvalidArguments(error) => write!(formatter, "invalid arguments: {}", error),
             ToolError::InvalidRequest(message) => write!(formatter, "invalid request: {}", message),
+            ToolError::StateDatabaseFailed(message) => {
+                write!(formatter, "RHoiScribe state database error: {}", message)
+            }
             ToolError::WriteFailed(error) => write!(formatter, "write failed: {}", error),
         }
     }

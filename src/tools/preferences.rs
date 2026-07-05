@@ -37,6 +37,7 @@ use super::rnmdb_store::{
 
 const PREFERENCES_PAGE_ID: u64 = 1;
 const PREFERENCES_SCHEMA_VERSION: u32 = 1;
+const STATE_DATABASE_FILE_NAME: &str = "rhoiscribe-state.rnmdb";
 const PREFERENCE_LOCK_RETRY_COUNT: usize = 250;
 const PREFERENCE_LOCK_RETRY_DELAY: Duration = Duration::from_millis(20);
 const STALE_LOCK_AFTER: Duration = Duration::from_secs(30 * 60);
@@ -95,7 +96,7 @@ pub fn list_agent_preferences(
 ) -> Result<AgentPreferencesResult, String> {
     let store_path = preference_store_path(request.store_path.as_deref());
     let store = open_preference_store(&store_path)?;
-    let snapshot = read_preferences(&store)?;
+    let snapshot = read_preferences(&store, &store_path)?;
     let preferences = preference_items(&snapshot.preferences);
 
     Ok(AgentPreferencesResult {
@@ -113,13 +114,14 @@ pub fn set_agent_preference(
 ) -> Result<AgentPreferenceMutationResult, String> {
     let key = normalized_preference_key(&request.key)?;
     let store_path = preference_store_path(request.store_path.as_deref());
-    let _lock = PreferenceMutationLock::acquire(&store_path)?;
+    let _lock = PreferenceMutationLock::acquire(&store_path)
+        .map_err(|error| state_database_error(&store_path, error))?;
     let store = open_preference_store(&store_path)?;
-    let mut snapshot = read_preferences(&store)?;
+    let mut snapshot = read_preferences(&store, &store_path)?;
     snapshot
         .preferences
         .insert(key.clone(), request.value.clone());
-    write_preferences(&store, &snapshot)?;
+    write_preferences(&store, &store_path, &snapshot)?;
 
     Ok(AgentPreferenceMutationResult {
         store_path: clean_display_path(&store_path),
@@ -137,11 +139,12 @@ pub fn delete_agent_preference(
 ) -> Result<AgentPreferenceMutationResult, String> {
     let key = normalized_preference_key(&request.key)?;
     let store_path = preference_store_path(request.store_path.as_deref());
-    let _lock = PreferenceMutationLock::acquire(&store_path)?;
+    let _lock = PreferenceMutationLock::acquire(&store_path)
+        .map_err(|error| state_database_error(&store_path, error))?;
     let store = open_preference_store(&store_path)?;
-    let mut snapshot = read_preferences(&store)?;
+    let mut snapshot = read_preferences(&store, &store_path)?;
     let value = snapshot.preferences.remove(&key);
-    write_preferences(&store, &snapshot)?;
+    write_preferences(&store, &store_path, &snapshot)?;
 
     Ok(AgentPreferenceMutationResult {
         store_path: clean_display_path(&store_path),
@@ -157,7 +160,7 @@ pub fn delete_agent_preference(
 pub(crate) fn preference_store_path(store_path: Option<&str>) -> PathBuf {
     store_path
         .map(|path| PathBuf::from(path.trim().trim_matches('"')))
-        .unwrap_or_else(|| default_rhoiscribe_dir().join("preferences.rnmdb"))
+        .unwrap_or_else(|| default_rhoiscribe_dir().join(STATE_DATABASE_FILE_NAME))
 }
 
 pub(crate) struct PreferenceMutationLock {
@@ -199,7 +202,7 @@ impl Drop for PreferenceMutationLock {
 fn preference_lock_path(store_path: &Path) -> PathBuf {
     let mut file_name = store_path
         .file_name()
-        .unwrap_or_else(|| std::ffi::OsStr::new("preferences.rnmdb"))
+        .unwrap_or_else(|| std::ffi::OsStr::new(STATE_DATABASE_FILE_NAME))
         .to_os_string();
     file_name.push(".lock");
     store_path.with_file_name(file_name)
@@ -223,21 +226,55 @@ fn remove_stale_lock(path: &Path) -> Result<(), String> {
 
 pub(crate) fn open_preference_store(path: &Path) -> Result<RnmdbSingleFilePageStore, String> {
     RnmdbSingleFilePageStore::open_or_create(path, DEFAULT_RNMDB_PAGE_SIZE_BYTES)
+        .map_err(|error| state_database_error(path, error))
 }
 
-fn read_preferences(store: &RnmdbSingleFilePageStore) -> Result<StoredPreferences, String> {
-    let Some(payload) = store.read_payload_page(PREFERENCES_PAGE_ID)? else {
+pub(crate) fn state_database_error(path: &Path, error: String) -> String {
+    if error.starts_with("RHoiScribe state database `") {
+        return error;
+    }
+    format!(
+        "RHoiScribe state database `{}` failed: {}",
+        clean_display_path(path),
+        error
+    )
+}
+
+pub(crate) fn is_state_database_error(error: &str) -> bool {
+    error.starts_with("RHoiScribe state database `")
+}
+
+fn read_preferences(
+    store: &RnmdbSingleFilePageStore,
+    path: &Path,
+) -> Result<StoredPreferences, String> {
+    let Some(payload) = store
+        .read_payload_page(PREFERENCES_PAGE_ID)
+        .map_err(|error| {
+            state_database_error(path, format!("failed to read preferences page: {error}"))
+        })?
+    else {
         return Ok(default_preferences());
     };
-    decode_preferences_payload(&payload)
+    decode_preferences_payload(&payload).map_err(|error| {
+        state_database_error(path, format!("failed to decode preferences page: {error}"))
+    })
 }
 
 fn write_preferences(
     store: &RnmdbSingleFilePageStore,
+    path: &Path,
     preferences: &StoredPreferences,
 ) -> Result<(), String> {
-    let payload = encode_preferences_payload(preferences, store.page_size_bytes())?;
-    store.write_payload_page(PREFERENCES_PAGE_ID, payload)
+    let payload =
+        encode_preferences_payload(preferences, store.page_size_bytes()).map_err(|error| {
+            state_database_error(path, format!("failed to encode preferences page: {error}"))
+        })?;
+    store
+        .write_payload_page(PREFERENCES_PAGE_ID, payload)
+        .map_err(|error| {
+            state_database_error(path, format!("failed to write preferences page: {error}"))
+        })
 }
 
 fn default_preferences() -> StoredPreferences {

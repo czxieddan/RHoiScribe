@@ -72,8 +72,8 @@ RHoiScribe は agents にローカル HOI4 knowledge layer、reusable prompts、
 - encoding、formatting、media conventions を素早く確認する
 - workspace conventions を尊重しながら existing files を安全に編集する
 - Rchadow による HOI4 debug launch 準備
-- RNMDB-backed `.rhoiscribe` による cross-IDE agent preferences
-- tool-call audit logs と regex-filtered export
+- RNMDB-backed `.rhoiscribe` による cross-IDE agent state
+- 同じ state database からの tool-call audit logs と regex-filtered export
 - user approval 後に experimental GUI/GFX procedural assets を作成する
 
 Skill package は、MCP configuration を編集せずに compatible agent へローカル機能を渡す最短の方法です。agent が MCP をサポートする場合は、完全な機能とより滑らかな体験のために MCP server を使ってください。
