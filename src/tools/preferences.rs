@@ -37,7 +37,8 @@ use super::rnmdb_store::{
 
 const PREFERENCES_PAGE_ID: u64 = 1;
 const PREFERENCES_SCHEMA_VERSION: u32 = 1;
-const STATE_DATABASE_FILE_NAME: &str = "rhoiscribe-state.rnmdb";
+const STATE_DATABASE_FILE_NAME: &str = "state.rnmdb";
+const LEGACY_STATE_DATABASE_FILE_NAME: &str = "rhoiscribe-state.rnmdb";
 const PREFERENCE_LOCK_RETRY_COUNT: usize = 250;
 const PREFERENCE_LOCK_RETRY_DELAY: Duration = Duration::from_millis(20);
 const STALE_LOCK_AFTER: Duration = Duration::from_secs(30 * 60);
@@ -158,9 +159,10 @@ pub fn delete_agent_preference(
 }
 
 pub(crate) fn preference_store_path(store_path: Option<&str>) -> PathBuf {
-    store_path
+    let path = store_path
         .map(|path| PathBuf::from(path.trim().trim_matches('"')))
-        .unwrap_or_else(|| default_rhoiscribe_dir().join(STATE_DATABASE_FILE_NAME))
+        .unwrap_or_else(|| default_rhoiscribe_dir().join(STATE_DATABASE_FILE_NAME));
+    canonical_state_database_path(path)
 }
 
 pub(crate) struct PreferenceMutationLock {
@@ -225,8 +227,33 @@ fn remove_stale_lock(path: &Path) -> Result<(), String> {
 }
 
 pub(crate) fn open_preference_store(path: &Path) -> Result<RnmdbSingleFilePageStore, String> {
-    RnmdbSingleFilePageStore::open_or_create(path, DEFAULT_RNMDB_PAGE_SIZE_BYTES)
-        .map_err(|error| state_database_error(path, error))
+    let legacy_path = legacy_state_database_path(path);
+    RnmdbSingleFilePageStore::open_or_create_with_legacy_source(
+        path,
+        &legacy_path,
+        DEFAULT_RNMDB_PAGE_SIZE_BYTES,
+    )
+    .map_err(|error| state_database_error(path, error))
+}
+
+fn canonical_state_database_path(path: PathBuf) -> PathBuf {
+    if path.file_name().is_some_and(|name| {
+        name.to_string_lossy()
+            .eq_ignore_ascii_case(LEGACY_STATE_DATABASE_FILE_NAME)
+    }) {
+        return path.with_file_name(STATE_DATABASE_FILE_NAME);
+    }
+    path
+}
+
+fn legacy_state_database_path(path: &Path) -> PathBuf {
+    if path.file_name().is_some_and(|name| {
+        name.to_string_lossy()
+            .eq_ignore_ascii_case(STATE_DATABASE_FILE_NAME)
+    }) {
+        return path.with_file_name(LEGACY_STATE_DATABASE_FILE_NAME);
+    }
+    path.to_path_buf()
 }
 
 pub(crate) fn state_database_error(path: &Path, error: String) -> String {

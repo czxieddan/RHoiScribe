@@ -28,7 +28,9 @@ use std::{
 use rchadow::rnmdb::{RnmdbPageStore, database_error};
 use rnmdb_common::ids::PageId;
 use rnmdb_storage::{
-    Page, PageCryptoKey, PageSize, SingleFileBackend, SingleFileOptions, StorageBackend,
+    Page, PageCryptoKey, PageSize, SingleFileBackend, SingleFileFormatCompatibilityStatus,
+    SingleFileOptions, StorageBackend, check_single_file_format_compatibility,
+    upgrade_single_file_with_key,
 };
 
 pub(crate) const DEFAULT_RNMDB_PAGE_SIZE_BYTES: usize = 16 * 1024;
@@ -40,6 +42,24 @@ pub(crate) struct RnmdbSingleFilePageStore {
 
 impl RnmdbSingleFilePageStore {
     pub(crate) fn open_or_create(path: &Path, page_size_bytes: usize) -> Result<Self, String> {
+        Self::open_or_create_current(path, page_size_bytes)
+    }
+
+    pub(crate) fn open_or_create_with_legacy_source(
+        path: &Path,
+        legacy_path: &Path,
+        page_size_bytes: usize,
+    ) -> Result<Self, String> {
+        if !path.exists() && legacy_path.is_file() {
+            promote_legacy_single_file(legacy_path, path)?;
+        }
+
+        let store = Self::open_or_create_current(path, page_size_bytes)?;
+        remove_legacy_single_file_if_present(path, legacy_path)?;
+        Ok(store)
+    }
+
+    fn open_or_create_current(path: &Path, page_size_bytes: usize) -> Result<Self, String> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
@@ -88,6 +108,42 @@ impl RnmdbSingleFilePageStore {
     pub(crate) fn page_size_bytes(&self) -> usize {
         self.page_size_bytes
     }
+}
+
+fn promote_legacy_single_file(source: &Path, target: &Path) -> Result<(), String> {
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    let compatibility = check_single_file_format_compatibility(source)
+        .map_err(|error| format!("failed to inspect legacy RNMDB state database: {error}"))?;
+    match compatibility.status() {
+        SingleFileFormatCompatibilityStatus::Supported => {
+            fs::rename(source, target).map_err(|error| {
+                format!("failed to move legacy RNMDB state database to canonical path: {error}")
+            })
+        }
+        SingleFileFormatCompatibilityStatus::UnsupportedOlder => {
+            let page_key = rhoiscribe_page_key()?;
+            upgrade_single_file_with_key(source, target, page_key).map_err(|error| {
+                format!("failed to upgrade legacy RNMDB state database: {error}")
+            })?;
+            fs::remove_file(source).map_err(|error| {
+                format!("failed to remove legacy RNMDB state database after upgrade: {error}")
+            })
+        }
+        SingleFileFormatCompatibilityStatus::UnsupportedNewer => {
+            Err("legacy RNMDB state database requires a newer RNMDB engine".to_string())
+        }
+    }
+}
+
+fn remove_legacy_single_file_if_present(path: &Path, legacy_path: &Path) -> Result<(), String> {
+    if path == legacy_path || !legacy_path.is_file() {
+        return Ok(());
+    }
+    fs::remove_file(legacy_path)
+        .map_err(|error| format!("failed to remove legacy RNMDB state database: {error}"))
 }
 
 impl RnmdbPageStore for RnmdbSingleFilePageStore {

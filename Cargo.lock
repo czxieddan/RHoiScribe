@@ -158,6 +158,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
+name = "const-oid"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
+
+[[package]]
 name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -268,6 +274,17 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer 0.10.4",
  "crypto-common 0.1.7",
+]
+
+[[package]]
+name = "digest"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
+dependencies = [
+ "block-buffer 0.12.1",
+ "const-oid",
+ "crypto-common 0.2.2",
 ]
 
 [[package]]
@@ -637,7 +654,7 @@ dependencies = [
  "hex",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.9",
  "thiserror",
  "uuid",
  "walkdir",
@@ -759,16 +776,17 @@ dependencies = [
 [[package]]
 name = "rnmdb-common"
 version = "0.1.0"
-source = "git+https://github.com/czxieddan/RNovModularDB.git?rev=a06574c5ed655135c58db8e4edb7c3bdbee331ca#a06574c5ed655135c58db8e4edb7c3bdbee331ca"
+source = "git+https://github.com/czxieddan/RNovModularDB.git?rev=ab1bf5e7fa4f521d6d32364cd217ff1a42b3c3b1#ab1bf5e7fa4f521d6d32364cd217ff1a42b3c3b1"
 
 [[package]]
 name = "rnmdb-storage"
 version = "0.1.0"
-source = "git+https://github.com/czxieddan/RNovModularDB.git?rev=a06574c5ed655135c58db8e4edb7c3bdbee331ca#a06574c5ed655135c58db8e4edb7c3bdbee331ca"
+source = "git+https://github.com/czxieddan/RNovModularDB.git?rev=ab1bf5e7fa4f521d6d32364cd217ff1a42b3c3b1#ab1bf5e7fa4f521d6d32364cd217ff1a42b3c3b1"
 dependencies = [
  "chacha20poly1305",
  "crc",
  "rnmdb-common",
+ "sha2 0.11.0",
 ]
 
 [[package]]
@@ -883,7 +901,18 @@ checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
- "digest",
+ "digest 0.10.7",
+]
+
+[[package]]
+name = "sha2"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.0",
+ "digest 0.11.3",
 ]
 
 [[package]]
