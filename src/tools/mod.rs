@@ -19,6 +19,15 @@
 // https://github.com/czxieddan/RHoiScribe
 //------------------------------------------------------------------------------------
 
+mod cwt_common;
+mod cwt_completion;
+mod cwt_diagnostics;
+mod cwt_file_validation;
+mod cwt_indexing;
+mod cwt_intelligence;
+mod cwt_localisation;
+mod cwt_profiles;
+mod cwt_project_validation;
 mod environment;
 mod error_log;
 mod gui_gfx_asset;
@@ -37,14 +46,37 @@ mod script_edit;
 mod tool_logs;
 mod unique_scan;
 
-use std::{borrow::Cow, error::Error, fmt, fs, path::Path};
+use std::{borrow::Cow, error::Error, fmt, fs, path::Path, sync::Arc};
 
 use rmcp::model::{CallToolResult, JsonObject, Tool, ToolAnnotations};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use crate::resources::{KNOWLEDGE_TOPIC_URI_PREFIX, KnowledgeCatalog};
+use crate::{
+    RhoiScribeRuntime,
+    resources::{KNOWLEDGE_TOPIC_URI_PREFIX, KnowledgeCatalog},
+};
 
+pub use cwt_completion::{
+    Hoi4CompletionSuggestion, SuggestHoi4CompletionRequest, SuggestHoi4CompletionResult,
+};
+pub use cwt_diagnostics::{
+    GetHoi4LanguageStatusRequest, GetHoi4LanguageStatusResult, Hoi4Diagnostic,
+    Hoi4LanguageWorkspaceStatus, OpenHoi4LanguageWorkspaceRequest, OpenHoi4LanguageWorkspaceResult,
+};
+pub use cwt_file_validation::{ValidateHoi4FileRequest, ValidateHoi4FileResult};
+pub use cwt_intelligence::{
+    ExplainHoi4DiagnosticRequest, ExplainHoi4DiagnosticResult, FindHoi4DefinitionRequest,
+    FindHoi4DefinitionResult, FindHoi4ReferencesRequest, FindHoi4ReferencesResult,
+    Hoi4LanguageSymbol, InspectHoi4ScopeRequest, InspectHoi4ScopeResult,
+    InspectHoi4TypeRuleRequest, InspectHoi4TypeRuleResult, ListHoi4WorkspaceSymbolsRequest,
+    ListHoi4WorkspaceSymbolsResult,
+};
+pub use cwt_localisation::{
+    GenerateMissingLocalisationRequest, GenerateMissingLocalisationResult,
+    MissingLocalisationCandidate,
+};
+pub use cwt_project_validation::ProjectValidationToolRequest;
 pub use environment::{
     DiscoverHoi4EnvironmentRequest, Hoi4DebugRunRequest, Hoi4DebugRunResult, Hoi4EnvironmentResult,
     Hoi4QualityCheck,
@@ -81,6 +113,83 @@ pub use unique_scan::{
 pub const MODULE_PURPOSE: &str = "batch generation and validation tools";
 
 const TOOL_SPECS: &[ToolSpec] = &[
+    ToolSpec {
+        name: "open_hoi4_language_workspace",
+        title: "Open HOI4 language workspace",
+        description: "Configure and warm a resident CWT-backed HOI4 language workspace in process memory. When local game context is needed, pass discover_hoi4_environment.game_path as vanilla_root and use mode=full. Uses embedded GitHub CWT rules by default and does not extract, cache, lock, or write CWT runtime state on disk.",
+        required: &["workspace_root"],
+        handler: call_open_hoi4_language_workspace,
+    },
+    ToolSpec {
+        name: "get_hoi4_language_status",
+        title: "Get HOI4 language status",
+        description: "Return resident CWT language workspace warm-up status, rule revision/hash, indexed file counts, diagnostic counts, stale flags, and no-disk memory mode.",
+        required: &[],
+        handler: call_get_hoi4_language_status,
+    },
+    ToolSpec {
+        name: "validate_hoi4_file",
+        title: "Validate HOI4 file",
+        description: "Validate one HOI4 script path or unsaved conversation content with embedded CWT rules and resident in-memory workspace state when a handle is provided. If content is supplied without path, RHoiScribe uses an in-memory virtual HOI4 path. Does not write CWT diagnostics or rule state to disk.",
+        required: &[],
+        handler: call_validate_hoi4_file,
+    },
+    ToolSpec {
+        name: "explain_hoi4_diagnostic",
+        title: "Explain HOI4 diagnostic",
+        description: "Explain a CWT/RHoiScribe diagnostic code or message for an agent, including likely meaning, repair guidance, related language tools, embedded rules revision, and no-disk runtime policy.",
+        required: &[],
+        handler: call_explain_hoi4_diagnostic,
+    },
+    ToolSpec {
+        name: "list_hoi4_workspace_symbols",
+        title: "List HOI4 workspace symbols",
+        description: "List HOI4 symbols from a resident CWT workspace handle or provided roots, including paths, lines, kind, scope/rule context, source, and confidence. Uses process memory and writes no CWT state.",
+        required: &[],
+        handler: call_list_hoi4_workspace_symbols,
+    },
+    ToolSpec {
+        name: "find_hoi4_definition",
+        title: "Find HOI4 definition",
+        description: "Resolve a HOI4 identifier, localisation key, or indexed symbol to definition locations with path, line, symbol kind, source, confidence, and embedded CWT rule revision.",
+        required: &["identifier"],
+        handler: call_find_hoi4_definition,
+    },
+    ToolSpec {
+        name: "find_hoi4_references",
+        title: "Find HOI4 references",
+        description: "Find references to a HOI4 identifier or symbol in a resident workspace or provided roots with path, line, context, source, confidence, and embedded CWT rule revision.",
+        required: &["identifier"],
+        handler: call_find_hoi4_references,
+    },
+    ToolSpec {
+        name: "suggest_hoi4_completion",
+        title: "Suggest HOI4 completion",
+        description: "Suggest context-aware HOI4 keys, blocks, effects, triggers, and workspace symbols for a file position from embedded CWT profiles and process-local workspace indexes.",
+        required: &["path"],
+        handler: call_suggest_hoi4_completion,
+    },
+    ToolSpec {
+        name: "inspect_hoi4_scope",
+        title: "Inspect HOI4 scope",
+        description: "Inspect the likely HOI4/CWT scope for a file and node path, returning allowed effect/trigger examples, rule source path, confidence, and current TypeIndex limitations.",
+        required: &["path"],
+        handler: call_inspect_hoi4_scope,
+    },
+    ToolSpec {
+        name: "inspect_hoi4_type_rule",
+        title: "Inspect HOI4 type rule",
+        description: "Inspect the embedded CWT rule profile that applies to a file path and optional node path, including rule/type name, source revision, virtual rule path, confidence, and limitations.",
+        required: &["path"],
+        handler: call_inspect_hoi4_type_rule,
+    },
+    ToolSpec {
+        name: "generate_missing_localisation",
+        title: "Generate missing localisation",
+        description: "Generate reviewable dry-run localisation entries from CWT/RHoiScribe missing-localisation analysis and workspace loc indexes. Never writes files; use generate_localisation_batch with returned entries when writing is explicitly approved.",
+        required: &[],
+        handler: call_generate_missing_localisation,
+    },
     ToolSpec {
         name: "generate_localisation_batch",
         title: "Generate localisation batch",
@@ -196,7 +305,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec {
         name: "validate_hoi4_project",
         title: "Validate HOI4 project",
-        description: "Run red/yellow/green static checks over indexed HOI4 roots for duplicate definitions, brace balance, unclosed blocks, missing GFX textures or sprites, localisation references, structural definitions, and replace_path risks.",
+        description: "Run default hybrid CWT plus legacy red/yellow/green checks over indexed HOI4 roots for schema errors, parse errors, duplicate definitions, missing assets/localisation, structural references, and replace_path risks. Use validation_mode=legacy for legacy-only checks.",
         required: &["roots"],
         handler: call_validate_hoi4_project,
     },
@@ -464,6 +573,11 @@ pub struct ToolCatalog {
     tools: &'static [ToolSpec],
 }
 
+#[derive(Debug, Clone)]
+pub struct ToolContext {
+    runtime: Arc<RhoiScribeRuntime>,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ToolSpec {
     name: &'static str,
@@ -473,7 +587,7 @@ struct ToolSpec {
     handler: ToolHandler,
 }
 
-type ToolHandler = fn(JsonObject) -> Result<CallToolResult, ToolError>;
+type ToolHandler = fn(&ToolContext, JsonObject) -> Result<CallToolResult, ToolError>;
 
 #[derive(Debug)]
 pub enum ToolError {
@@ -494,6 +608,16 @@ fn map_state_database_error(message: String) -> ToolError {
 
 pub struct ToolEngine;
 
+impl ToolContext {
+    pub fn new(runtime: Arc<RhoiScribeRuntime>) -> Self {
+        Self { runtime }
+    }
+
+    pub fn runtime(&self) -> Arc<RhoiScribeRuntime> {
+        Arc::clone(&self.runtime)
+    }
+}
+
 impl ToolCatalog {
     pub fn builtin() -> Self {
         Self { tools: TOOL_SPECS }
@@ -508,8 +632,18 @@ impl ToolCatalog {
     }
 
     pub fn call(&self, name: &str, arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+        self.call_with_runtime(Arc::new(RhoiScribeRuntime::new()), name, arguments)
+    }
+
+    pub fn call_with_runtime(
+        &self,
+        runtime: Arc<RhoiScribeRuntime>,
+        name: &str,
+        arguments: JsonObject,
+    ) -> Result<CallToolResult, ToolError> {
+        let context = ToolContext::new(runtime);
         let arguments_for_log = Value::Object(arguments.clone());
-        let result = self.call_without_logging(name, arguments);
+        let result = self.call_without_logging(&context, name, arguments);
         match self.record_tool_log(name, arguments_for_log, &result) {
             Ok(()) => result,
             Err(log_error) => match result {
@@ -524,6 +658,7 @@ impl ToolCatalog {
 
     fn call_without_logging(
         &self,
+        context: &ToolContext,
         name: &str,
         arguments: JsonObject,
     ) -> Result<CallToolResult, ToolError> {
@@ -532,7 +667,7 @@ impl ToolCatalog {
             .iter()
             .find(|tool| tool.name == name)
             .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
-        (tool.handler)(arguments)
+        (tool.handler)(context, arguments)
     }
 
     fn record_tool_log(
@@ -541,6 +676,13 @@ impl ToolCatalog {
         arguments: Value,
         result: &Result<CallToolResult, ToolError>,
     ) -> Result<(), ToolError> {
+        if cwt_diagnostics::should_skip_tool_log(name, &arguments)
+            || cwt_intelligence::is_cwt_intelligence_tool(name)
+            || cwt_localisation::is_cwt_localisation_tool(name)
+        {
+            return Ok(());
+        }
+
         let store_path = arguments
             .as_object()
             .and_then(tool_logs::tool_log_store_path_from_arguments);
@@ -870,149 +1012,339 @@ fn tool_log_outcome(
     }
 }
 
-fn call_generate_localisation_batch(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_generate_localisation_batch(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<LocalisationBatchRequest>(arguments)?;
     Ok(structured_result(ToolEngine::generate_localisation_batch(
         request,
     )?))
 }
 
-fn call_generate_focus_batch(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_open_hoi4_language_workspace(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<OpenHoi4LanguageWorkspaceRequest>(arguments)?;
+    Ok(structured_result(cwt_diagnostics::open_language_workspace(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_get_hoi4_language_status(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<GetHoi4LanguageStatusRequest>(arguments)?;
+    Ok(structured_result(cwt_diagnostics::get_language_status(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_validate_hoi4_file(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<ValidateHoi4FileRequest>(arguments)?;
+    Ok(structured_result(cwt_file_validation::validate_file(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_explain_hoi4_diagnostic(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<ExplainHoi4DiagnosticRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::explain_diagnostic(
+        request,
+    )?))
+}
+
+fn call_list_hoi4_workspace_symbols(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<ListHoi4WorkspaceSymbolsRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::list_workspace_symbols(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_find_hoi4_definition(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<FindHoi4DefinitionRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::find_definition(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_find_hoi4_references(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<FindHoi4ReferencesRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::find_references(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_suggest_hoi4_completion(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<SuggestHoi4CompletionRequest>(arguments)?;
+    Ok(structured_result(cwt_completion::suggest_completion(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_inspect_hoi4_scope(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<InspectHoi4ScopeRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::inspect_scope(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_inspect_hoi4_type_rule(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<InspectHoi4TypeRuleRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::inspect_type_rule(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_generate_missing_localisation(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<GenerateMissingLocalisationRequest>(arguments)?;
+    Ok(structured_result(
+        cwt_localisation::generate_missing_localisation(context.runtime(), request)?,
+    ))
+}
+
+fn call_generate_focus_batch(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<FocusBatchRequest>(arguments)?;
     Ok(structured_result(ToolEngine::generate_focus_batch(
         request,
     )?))
 }
 
-fn call_generate_event_batch(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_generate_event_batch(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<EventBatchRequest>(arguments)?;
     Ok(structured_result(ToolEngine::generate_event_batch(
         request,
     )?))
 }
 
-fn call_generate_decision_batch(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_generate_decision_batch(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<DecisionBatchRequest>(arguments)?;
     Ok(structured_result(ToolEngine::generate_decision_batch(
         request,
     )?))
 }
 
-fn call_search_hoi4_knowledge(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_search_hoi4_knowledge(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<SearchHoi4KnowledgeRequest>(arguments)?;
     Ok(structured_result(ToolEngine::search_hoi4_knowledge(
         request,
     )?))
 }
 
-fn call_scan_unique_identifiers(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_scan_unique_identifiers(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<UniqueIdentifierScanRequest>(arguments)?;
     Ok(structured_result(ToolEngine::scan_unique_identifiers(
         request,
     )?))
 }
 
-fn call_discover_hoi4_environment(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_discover_hoi4_environment(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<DiscoverHoi4EnvironmentRequest>(arguments)?;
     Ok(structured_result(ToolEngine::discover_hoi4_environment(
         request,
     )?))
 }
 
-fn call_validate_hoi4_debug_run(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_validate_hoi4_debug_run(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<Hoi4DebugRunRequest>(arguments)?;
     Ok(structured_result(ToolEngine::validate_hoi4_debug_run(
         request,
     )))
 }
 
-fn call_launch_hoi4_debug_with_rchadow(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_launch_hoi4_debug_with_rchadow(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<RchadowDebugLaunchRequest>(arguments)?;
     Ok(structured_result(
         ToolEngine::launch_hoi4_debug_with_rchadow(request)?,
     ))
 }
 
-fn call_classify_error_log(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_classify_error_log(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<ClassifyErrorLogRequest>(arguments)?;
     Ok(structured_result(ToolEngine::classify_error_log(request)?))
 }
 
-fn call_list_agent_preferences(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_list_agent_preferences(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<ListAgentPreferencesRequest>(arguments)?;
     Ok(structured_result(ToolEngine::list_agent_preferences(
         request,
     )?))
 }
 
-fn call_set_agent_preference(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_set_agent_preference(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<SetAgentPreferenceRequest>(arguments)?;
     Ok(structured_result(ToolEngine::set_agent_preference(
         request,
     )?))
 }
 
-fn call_delete_agent_preference(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_delete_agent_preference(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<DeleteAgentPreferenceRequest>(arguments)?;
     Ok(structured_result(ToolEngine::delete_agent_preference(
         request,
     )?))
 }
 
-fn call_query_tool_logs(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_query_tool_logs(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<ToolLogQueryRequest>(arguments)?;
     Ok(structured_result(ToolEngine::query_tool_logs(request)?))
 }
 
-fn call_export_tool_logs(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_export_tool_logs(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<ToolLogExportRequest>(arguments)?;
     Ok(structured_result(ToolEngine::export_tool_logs(request)?))
 }
 
-fn call_index_hoi4_project(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_index_hoi4_project(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<ProjectIndexRequest>(arguments)?;
     Ok(structured_result(ToolEngine::index_hoi4_project(request)?))
 }
 
-fn call_validate_hoi4_project(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
-    let request = parse_arguments::<ProjectValidationRequest>(arguments)?;
-    Ok(structured_result(ToolEngine::validate_hoi4_project(
+fn call_validate_hoi4_project(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request =
+        parse_arguments::<cwt_project_validation::ProjectValidationToolRequest>(arguments)?;
+    Ok(structured_result(cwt_project_validation::validate_project(
+        context.runtime(),
         request,
     )?))
 }
 
-fn call_repair_hoi4_project(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_repair_hoi4_project(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<RepairHoi4ProjectRequest>(arguments)?;
     Ok(structured_result(ToolEngine::repair_hoi4_project(request)?))
 }
 
-fn call_edit_hoi4_script_file(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_edit_hoi4_script_file(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<EditHoi4ScriptFileRequest>(arguments)?;
     Ok(structured_result(ToolEngine::edit_hoi4_script_file(
         request,
     )?))
 }
 
-fn call_generate_gui_gfx_asset(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_generate_gui_gfx_asset(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<GenerateGuiGfxAssetRequest>(arguments)?;
     Ok(structured_result(ToolEngine::generate_gui_gfx_asset(
         request,
     )?))
 }
 
-fn call_setup_hoi4_mod_skeleton(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_setup_hoi4_mod_skeleton(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<Hoi4ModSkeletonRequest>(arguments)?;
     Ok(structured_result(ToolEngine::setup_hoi4_mod_skeleton(
         request,
     )?))
 }
 
-fn call_validate_hoi4_paths(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_validate_hoi4_paths(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<ValidateHoi4PathsRequest>(arguments)?;
     Ok(structured_result(ToolEngine::validate_hoi4_paths(request)))
 }
 
-fn call_format_paradox_script(arguments: JsonObject) -> Result<CallToolResult, ToolError> {
+fn call_format_paradox_script(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<FormatParadoxScriptRequest>(arguments)?;
     Ok(structured_result(ToolEngine::format_paradox_script(
         request,
@@ -1041,12 +1373,61 @@ fn input_schema(tool_name: &str, required: &[&str]) -> JsonObject {
 
 fn tool_properties(tool_name: &str) -> Map<String, Value> {
     match tool_name {
+        "open_hoi4_language_workspace" => open_language_workspace_properties(),
+        "validate_hoi4_file" => validate_hoi4_file_properties(),
         "generate_focus_batch" => focus_batch_properties(),
         "generate_decision_batch" => decision_batch_properties(),
         "query_tool_logs" => query_tool_logs_properties(),
         "export_tool_logs" => export_tool_logs_properties(),
         _ => Map::new(),
     }
+}
+
+fn open_language_workspace_properties() -> Map<String, Value> {
+    Map::from_iter([
+        text_property("workspace_root", "Current HOI4 mod workspace root."),
+        text_property(
+            "vanilla_root",
+            "Optional HOI4 game root, normally discover_hoi4_environment.game_path.",
+        ),
+        text_property(
+            "mode",
+            "Use mod_only for fast mod checks or full to index vanilla_root in memory.",
+        ),
+        array_property(
+            "ignore_globs",
+            "Optional path patterns skipped during in-memory workspace discovery.",
+        ),
+        array_property(
+            "localisation_languages",
+            "Optional localisation languages used by the language workspace.",
+        ),
+        text_property(
+            "rules_path",
+            "Advanced read-only external CWT rules override. Omit for embedded rules.",
+        ),
+    ])
+}
+
+fn validate_hoi4_file_properties() -> Map<String, Value> {
+    Map::from_iter([
+        text_property(
+            "handle_id",
+            "Optional resident CWT workspace handle returned by open_hoi4_language_workspace.",
+        ),
+        text_property(
+            "workspace_root",
+            "Optional workspace root used to resolve relative saved paths.",
+        ),
+        text_property(
+            "path",
+            "Optional saved or virtual mod-relative HOI4 path. Omit when only conversation content is available.",
+        ),
+        text_property(
+            "content",
+            "Optional unsaved content to validate entirely in memory.",
+        ),
+    ])
 }
 
 fn focus_batch_properties() -> Map<String, Value> {

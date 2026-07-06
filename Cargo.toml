@@ -7,6 +7,11 @@ build = "build.rs"
 
 [dependencies]
 anyhow = "1.0.102"
+cwtools_parser = { git = "https://github.com/MillenniumDawn/cwtools.git", rev = "cb7f8c8c95dd68fcbd06d37efb87bc49fc17fbef", package = "cwtools_parser" }
+cwtools-hoi4-config = { git = "https://github.com/Hilde-Research-Foundation/cwtools-hoi4-config-rs.git", rev = "4f19c45ee151fc7052351a925975146b75591dee" }
+cwtools_rules = { git = "https://github.com/MillenniumDawn/cwtools.git", rev = "cb7f8c8c95dd68fcbd06d37efb87bc49fc17fbef", package = "cwtools_rules" }
+cwtools_string_table = { git = "https://github.com/MillenniumDawn/cwtools.git", rev = "cb7f8c8c95dd68fcbd06d37efb87bc49fc17fbef", package = "cwtools_string_table" }
+cwtools_validation = { git = "https://github.com/MillenniumDawn/cwtools.git", rev = "cb7f8c8c95dd68fcbd06d37efb87bc49fc17fbef", package = "cwtools_validation" }
 encoding_rs = "0.8.35"
 getrandom = "0.2.17"
 rchadow = { git = "https://github.com/czxieddan/Rchadow.git", rev = "ed0030084a56dd0ef6768843a739c6c10ec69316", features = ["rnmdb"] }

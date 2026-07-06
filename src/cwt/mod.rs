@@ -1,5 +1,5 @@
 //------------------------------------------------------------------------------------
-// lib.rs -- Part of RHoiScribe
+// mod.rs -- Part of RHoiScribe
 //
 // Copyright (C) 2026 CzXieDdan. All rights reserved.
 //
@@ -19,12 +19,8 @@
 // https://github.com/czxieddan/RHoiScribe
 //------------------------------------------------------------------------------------
 
-pub mod cli;
-pub mod cwt;
-pub mod prompts;
-pub mod resources;
-pub mod server;
-pub mod skill;
-pub mod tools;
-
-pub use cwt::runtime::RhoiScribeRuntime;
+pub(crate) mod hoi4_config;
+pub mod rules;
+pub mod runtime;
+pub mod service;
+pub mod workspace;

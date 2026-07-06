@@ -68,6 +68,7 @@ RHoiScribe gives agents a local HOI4 knowledge layer, reusable prompts, and file
 At a high level, it helps agents with:
 
 - project structure and reference awareness before broad edits
+- HOI4 language support based on [cwtools](https://github.com/MillenniumDawn/cwtools)
 - red/yellow/green checks for load-risk issues before delivery
 - fast encoding, formatting, and media convention checks
 - safe edits to existing files while respecting workspace conventions
@@ -77,6 +78,8 @@ At a high level, it helps agents with:
 - experimental GUI/GFX asset creation when the user approves new procedural art
 
 The bundled Skill package is the quickest way to give compatible agents local access without editing MCP configuration. For complete functionality and a smoother experience, use the MCP server when your agent supports it.
+
+For a closer look at the tools and recommended workflows, read the [feature guide](docs/features.md). For client configuration, see the [MCP setup guide](docs/client-setup.md).
 
 <h2 align="center">Quick Start</h2>
 
@@ -149,6 +152,6 @@ Rchadow provides playset storage, HOI4 mod discovery, launcher-compatible load f
 <div align="center">
   <h3>Contributors</h3>
   <a href="https://github.com/czxieddan/RHoiScribe/graphs/contributors">
-    <img src="https://stg.contrib.rocks/image?repo=czxieddan/RHoiScribe" alt="RHoiScribe contributors">
+    <img src="https://contrib.rocks/image?repo=czxieddan/RHoiScribe" alt="RHoiScribe contributors">
   </a>
 </div>

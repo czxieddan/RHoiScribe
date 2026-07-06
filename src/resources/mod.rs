@@ -23,8 +23,10 @@ use std::{error::Error, fmt};
 
 use rmcp::model::{Annotated, RawResource, ReadResourceResult, Resource, ResourceContents};
 
+mod cwt;
 mod knowledge;
 
+pub use cwt::{CWT_CATALOG_URI, CWT_METADATA_URI, CwtResourceCatalog};
 pub use knowledge::{KnowledgeCatalog, KnowledgeLoadError, KnowledgeTopic};
 
 pub const MODULE_PURPOSE: &str = "versioned HOI4 knowledge resources";
@@ -35,6 +37,7 @@ pub const KNOWLEDGE_TOPIC_URI_PREFIX: &str = "rhoiscribe://hoi4/knowledge/";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResourceCatalog {
     knowledge: KnowledgeCatalog,
+    cwt: CwtResourceCatalog,
     latest_update: knowledge::LatestUpdateResource,
     catalog_index: String,
 }
@@ -51,6 +54,7 @@ impl ResourceCatalog {
 
         Ok(Self {
             knowledge,
+            cwt: CwtResourceCatalog::load_embedded(),
             latest_update: knowledge::load_latest_update()?,
             catalog_index,
         })
@@ -87,14 +91,36 @@ impl ResourceCatalog {
                 "text/markdown",
             )
         }));
+        resources.extend(self.cwt.resource_entries().into_iter().map(|entry| {
+            text_resource_with_size(
+                &entry.uri,
+                &entry.name,
+                &entry.title,
+                &entry.description,
+                entry.size,
+                entry.mime_type,
+            )
+        }));
 
         resources
     }
 
     pub fn read_text(&self, uri: &str) -> Result<String, ResourceReadError> {
+        self.read_text_with_mime(uri).map(|resource| resource.0)
+    }
+
+    fn read_text_with_mime(&self, uri: &str) -> Result<(String, &'static str), ResourceReadError> {
+        if cwt::is_cwt_resource_uri(uri) {
+            let resource = self
+                .cwt
+                .read_text(uri)
+                .ok_or_else(|| ResourceReadError::UnknownUri(uri.to_string()))?;
+            return Ok((resource.text, resource.mime_type));
+        }
+
         match uri {
-            LATEST_UPDATE_URI => Ok(self.latest_update.body.clone()),
-            KNOWLEDGE_CATALOG_URI => Ok(self.catalog_index.clone()),
+            LATEST_UPDATE_URI => Ok((self.latest_update.body.clone(), "text/markdown")),
+            KNOWLEDGE_CATALOG_URI => Ok((self.catalog_index.clone(), "application/toml")),
             _ => {
                 let Some(topic_id) = uri.strip_prefix(KNOWLEDGE_TOPIC_URI_PREFIX) else {
                     return Err(ResourceReadError::UnknownUri(uri.to_string()));
@@ -105,20 +131,16 @@ impl ResourceCatalog {
                     .topic(topic_id)
                     .ok_or_else(|| ResourceReadError::UnknownUri(uri.to_string()))?;
 
-                Ok(topic_to_markdown(topic))
+                Ok((topic_to_markdown(topic), "text/markdown"))
             }
         }
     }
 
     pub fn read_mcp_resource(&self, uri: &str) -> Result<ReadResourceResult, ResourceReadError> {
-        let mime_type = if uri == KNOWLEDGE_CATALOG_URI {
-            "application/toml"
-        } else {
-            "text/markdown"
-        };
+        let (text, mime_type) = self.read_text_with_mime(uri)?;
 
         Ok(ReadResourceResult::new(vec![
-            ResourceContents::text(self.read_text(uri)?, uri).with_mime_type(mime_type),
+            ResourceContents::text(text, uri).with_mime_type(mime_type),
         ]))
     }
 }
@@ -141,12 +163,23 @@ fn text_resource(
     content: &str,
     mime_type: &str,
 ) -> Resource {
+    text_resource_with_size(uri, name, title, description, content.len(), mime_type)
+}
+
+fn text_resource_with_size(
+    uri: &str,
+    name: &str,
+    title: &str,
+    description: &str,
+    size: usize,
+    mime_type: &str,
+) -> Resource {
     Annotated::new(
         RawResource::new(uri, name)
             .with_title(title)
             .with_description(description)
             .with_mime_type(mime_type)
-            .with_size(content.len() as u32),
+            .with_size(size as u32),
         None,
     )
 }
