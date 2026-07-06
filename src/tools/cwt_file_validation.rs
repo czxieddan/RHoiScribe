@@ -21,8 +21,8 @@
 
 use std::{
     fs,
-    path::{Path, PathBuf},
-    sync::Arc,
+    path::{Component, Path, PathBuf},
+    sync::{Arc, OnceLock},
 };
 
 use serde::{Deserialize, Serialize};
@@ -37,9 +37,12 @@ use crate::{
 
 use super::{
     ToolError,
-    cwt_common::workspace_snapshot_from_handle,
+    cwt_common::{normalize_path, path_to_string, workspace_snapshot_from_handle},
     cwt_diagnostics::{Hoi4Diagnostic, validate_content},
 };
+
+static EMBEDDED_FILE_VALIDATION_RULES: OnceLock<Result<Arc<LoadedCwtRules>, String>> =
+    OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ValidateHoi4FileRequest {
@@ -103,15 +106,22 @@ fn rules_for_file_validation(
         });
     }
 
-    let rules = Arc::new(
-        load_embedded_hoi4_cwt_rules()
-            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?,
-    );
     Ok(FileValidationContext {
-        rules,
+        rules: embedded_file_validation_rules()?,
         handle_id: request.handle_id.clone(),
         workspace_root: request.workspace_root.as_ref().map(PathBuf::from),
     })
+}
+
+fn embedded_file_validation_rules() -> Result<Arc<LoadedCwtRules>, ToolError> {
+    EMBEDDED_FILE_VALIDATION_RULES
+        .get_or_init(|| {
+            load_embedded_hoi4_cwt_rules()
+                .map(Arc::new)
+                .map_err(|error| error.to_string())
+        })
+        .clone()
+        .map_err(ToolError::InvalidRequest)
 }
 
 fn file_content(
@@ -123,16 +133,38 @@ fn file_content(
         return Ok(content.clone());
     }
 
-    let path = match workspace_root {
-        Some(root) if !Path::new(path).is_absolute() => join_relative_path(root, path),
-        _ => PathBuf::from(path),
-    };
-    fs::read_to_string(&path).map_err(|error| {
+    let read_path = readable_validation_path(workspace_root, path)?;
+    fs::read_to_string(&read_path).map_err(|error| {
         ToolError::InvalidRequest(format!(
             "failed to read CWT validation file `{}`: {}",
-            path_to_string(&path),
+            path_to_string(&read_path),
             error
         ))
+    })
+}
+
+fn readable_validation_path(
+    workspace_root: Option<&Path>,
+    path: &str,
+) -> Result<PathBuf, ToolError> {
+    let Some(root) = workspace_root else {
+        return Ok(PathBuf::from(path));
+    };
+    let relative_path = Path::new(path);
+    if relative_path.is_absolute() || has_escaping_component(relative_path) {
+        return Err(ToolError::InvalidRequest(
+            "CWT validation path must stay inside workspace_root".to_string(),
+        ));
+    }
+    Ok(join_relative_path(root, path))
+}
+
+fn has_escaping_component(path: &Path) -> bool {
+    path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::Prefix(_) | Component::RootDir
+        )
     })
 }
 
@@ -225,12 +257,4 @@ fn join_relative_path(root: &Path, path: &str) -> PathBuf {
     path.split('/')
         .filter(|part| !part.is_empty())
         .fold(root.to_path_buf(), |current, part| current.join(part))
-}
-
-fn normalize_path(path: &str) -> String {
-    path.replace('\\', "/")
-}
-
-fn path_to_string(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
 }

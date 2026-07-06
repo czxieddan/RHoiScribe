@@ -27,6 +27,7 @@ use crate::{RhoiScribeRuntime, cwt::rules::HOI4_CWT_CONFIG_REVISION};
 
 use super::{
     ProjectIndexItem, ScanRoot, ToolError,
+    cwt_common::{bounded_limit, normalize_path},
     cwt_indexing::{CwtIndexQuery, index_project},
     cwt_profiles::{RuleProfile, rule_profile_for_path},
 };
@@ -95,7 +96,7 @@ pub fn suggest_completion(
         limit,
         &mut suggestions,
         &mut seen,
-    );
+    )?;
     suggestions.truncate(limit);
 
     Ok(SuggestHoi4CompletionResult {
@@ -141,20 +142,19 @@ fn add_workspace_completions(
     limit: usize,
     suggestions: &mut Vec<Hoi4CompletionSuggestion>,
     seen: &mut BTreeSet<String>,
-) {
+) -> Result<(), ToolError> {
     if suggestions.len() >= limit || !has_workspace_completion_source(request) {
-        return;
+        return Ok(());
     }
 
-    let Ok(index) = index_project(runtime, completion_index_query(request)) else {
-        return;
-    };
+    let index = index_project(runtime, completion_index_query(request))?;
     for item in index.definitions.iter() {
         push_workspace_completion(suggestions, seen, item, prefix);
         if suggestions.len() >= limit {
             break;
         }
     }
+    Ok(())
 }
 
 fn has_workspace_completion_source(request: &SuggestHoi4CompletionRequest) -> bool {
@@ -220,12 +220,4 @@ fn matches_prefix(label: &str, prefix: &str) -> bool {
         || label
             .to_ascii_lowercase()
             .starts_with(&prefix.to_ascii_lowercase())
-}
-
-fn bounded_limit(limit: Option<usize>, default: usize) -> usize {
-    limit.unwrap_or(default).clamp(1, default)
-}
-
-fn normalize_path(path: &str) -> String {
-    path.replace('\\', "/")
 }

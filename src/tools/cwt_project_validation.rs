@@ -19,11 +19,7 @@
 // https://github.com/czxieddan/RHoiScribe
 //------------------------------------------------------------------------------------
 
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{fs, io, path::PathBuf, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 
@@ -36,13 +32,14 @@ use crate::{
 
 use super::{
     ProjectValidationCheck, ProjectValidationRequest, ProjectValidationResult, ScanRoot, ToolError,
-    cwt_common::workspace_snapshot_from_handle,
+    cwt_common::{normalize_path, path_to_string, workspace_snapshot_from_handle},
     cwt_diagnostics::{Hoi4Diagnostic, validate_content},
     project_validation,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectValidationToolRequest {
+    #[serde(default)]
     pub roots: Vec<ScanRoot>,
     pub include_game_roots: Option<bool>,
     pub validation_mode: Option<String>,
@@ -92,6 +89,10 @@ fn hybrid_project_validation(
     runtime: Arc<RhoiScribeRuntime>,
     request: ProjectValidationToolRequest,
 ) -> Result<ProjectValidationResult, ToolError> {
+    if request.handle_id.is_some() && request.roots.is_empty() {
+        return cwt_project_validation(&runtime, &request);
+    }
+
     let legacy = legacy_project_validation(&request)?;
     let cwt = cwt_project_validation(&runtime, &request)?;
     Ok(merge_project_validation(legacy, cwt))
@@ -118,7 +119,7 @@ fn cwt_project_validation(
 }
 
 fn validate_project_roots(request: &ProjectValidationToolRequest) -> Result<(), ToolError> {
-    if request.roots.is_empty() {
+    if request.handle_id.is_none() && request.roots.is_empty() {
         return Err(ToolError::InvalidRequest(
             "at least one project root is required".to_string(),
         ));
@@ -405,12 +406,4 @@ fn is_script_path(path: &str) -> bool {
         extension.to_ascii_lowercase().as_str(),
         "txt" | "gui" | "gfx" | "sfx" | "asset" | "map"
     )
-}
-
-fn normalize_path(path: &str) -> String {
-    path.replace('\\', "/")
-}
-
-fn path_to_string(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
 }

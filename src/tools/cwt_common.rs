@@ -19,14 +19,22 @@
 // https://github.com/czxieddan/RHoiScribe
 //------------------------------------------------------------------------------------
 
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    thread,
+    time::{Duration, Instant},
+};
 
 use crate::{
     RhoiScribeRuntime,
-    cwt::workspace::{CwtWorkspaceHandle, CwtWorkspaceSnapshot},
+    cwt::workspace::{CwtWorkspaceHandle, CwtWorkspaceSnapshot, CwtWorkspaceWarmState},
 };
 
 use super::ToolError;
+
+const SNAPSHOT_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
+const SNAPSHOT_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 pub(super) fn workspace_snapshot_from_handle(
     runtime: &Arc<RhoiScribeRuntime>,
@@ -38,11 +46,15 @@ pub(super) fn workspace_snapshot_from_handle(
         .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
         .ok_or_else(|| ToolError::InvalidRequest(format!("unknown CWT workspace `{handle_id}`")))?;
 
-    ensure_snapshot_is_warm(&handle)?;
-    handle
+    if let Some(snapshot) = handle
         .snapshot()
         .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-        .ok_or_else(|| ToolError::InvalidRequest("CWT workspace has no warm snapshot".to_string()))
+    {
+        return Ok(snapshot);
+    }
+
+    schedule_warm_refresh(&handle)?;
+    wait_for_snapshot(&handle)
 }
 
 pub(super) fn workspace_root_from_handle(
@@ -53,16 +65,60 @@ pub(super) fn workspace_root_from_handle(
         .map(|snapshot| snapshot.workspace_root.clone())
 }
 
-fn ensure_snapshot_is_warm(handle: &Arc<CwtWorkspaceHandle>) -> Result<(), ToolError> {
-    if handle
-        .snapshot()
-        .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-        .is_none()
-    {
-        handle
-            .refresh_blocking()
-            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?;
-    }
+pub(super) fn bounded_limit(limit: Option<usize>, default: usize) -> usize {
+    limit.unwrap_or(default).clamp(1, default)
+}
 
-    Ok(())
+pub(super) fn normalize_path(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+pub(super) fn path_to_string(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn schedule_warm_refresh(handle: &Arc<CwtWorkspaceHandle>) -> Result<(), ToolError> {
+    let status = handle
+        .status()
+        .map_err(|error| ToolError::InvalidRequest(error.to_string()))?;
+    match status.state {
+        CwtWorkspaceWarmState::Warming => Ok(()),
+        CwtWorkspaceWarmState::Cold | CwtWorkspaceWarmState::Failed => handle
+            .refresh()
+            .map(|_| ())
+            .map_err(|error| ToolError::InvalidRequest(error.to_string())),
+        CwtWorkspaceWarmState::Warm => Ok(()),
+    }
+}
+
+fn wait_for_snapshot(
+    handle: &Arc<CwtWorkspaceHandle>,
+) -> Result<Arc<CwtWorkspaceSnapshot>, ToolError> {
+    let deadline = Instant::now() + SNAPSHOT_WAIT_TIMEOUT;
+
+    loop {
+        if let Some(snapshot) = handle
+            .snapshot()
+            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
+        {
+            return Ok(snapshot);
+        }
+        let status = handle
+            .status()
+            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?;
+        if status.state == CwtWorkspaceWarmState::Failed {
+            return Err(ToolError::InvalidRequest(
+                status
+                    .last_error
+                    .unwrap_or_else(|| "CWT workspace warm-up failed".to_string()),
+            ));
+        }
+        if Instant::now() >= deadline {
+            return Err(ToolError::InvalidRequest(
+                "CWT workspace is still warming; poll get_hoi4_language_status and retry"
+                    .to_string(),
+            ));
+        }
+        thread::sleep(SNAPSHOT_POLL_INTERVAL);
+    }
 }
