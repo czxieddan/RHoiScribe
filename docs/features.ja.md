@@ -20,7 +20,8 @@
 - CWT memory policy: embedded CWT rules は、compiled Cargo git dependency の static source table から process memory に読み込まれます。
 - RHoiScribe は rule files を展開せず、CWT caches や CWT lock files を作らず、CWT language state を RNMDB に保存しません。
 - CWT language tools は RHoiScribe tool-call logging を避けるため、CWT diagnostics と workspace language state は `.rhoiscribe` log store に書かれません。
-- Workspace warm-up: MCP session の早い段階で current mod root を使って `open_hoi4_language_workspace` を呼び、その後 `get_hoi4_language_status` を polling して warm になるのを待ちます。
+- Workspace warm-up: mod workspace があり、HOI4 game root がまだ分からない場合は、先に `discover_hoi4_environment` を呼びます。vanilla-aware な CWT context が必要なときは、returned `game_path` を `vanilla_root` として `open_hoi4_language_workspace` に渡し、その後 `get_hoi4_language_status` を polling して warm になるのを待ちます。
+- Conversation-only analysis: user が HOI4 script を chat に貼っただけで workspace や saved file がない場合は、`content` を指定して `validate_hoi4_file` を呼びます。実在する path は不要です。`path` を省略すると、RHoiScribe は memory 上だけの virtual HOI4 path を使います。
 - mod root、rules override、vanilla root、ignore globs、language configuration が変わった場合は workspace を開き直してください。
 - Project diagnostics: `validate_hoi4_project` は既定で hybrid CWT plus legacy checks を使います。古い挙動だけが必要なら `validation_mode = "legacy"`、CWT だけなら `validation_mode = "cwt"`、両方を明示したいなら `validation_mode = "hybrid"` を使います。
 - File diagnostics: `validate_hoi4_file` は saved file または unsaved content を検証し、resident workspace handle があれば温めた状態を利用します。

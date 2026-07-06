@@ -20,7 +20,8 @@
 - CWT 内存策略：内置 CWT rules 来自编译进二进制的 Cargo git dependency 静态 source table，并在进程内存中读取。
 - RHoiScribe 不会解压规则文件，不会创建 CWT cache、lock file，也不会把 CWT 语言状态写入 RNMDB。
 - CWT 语言工具会跳过 RHoiScribe 的 tool-call logging，因此 CWT diagnostics 和 workspace language state 不会写入 `.rhoiscribe` 日志存储。
-- 工作区预热：在 MCP 会话里尽早用当前 mod root 调用 `open_hoi4_language_workspace`，然后轮询 `get_hoi4_language_status`，直到状态变为 warm。
+- 工作区预热：如果当前有 mod workspace，且还不知道 HOI4 游戏根目录，先调用 `discover_hoi4_environment`。当需要 vanilla-aware 的 CWT 语境时，把返回的 `game_path` 作为 `vanilla_root` 传给 `open_hoi4_language_workspace`，再轮询 `get_hoi4_language_status`，直到状态变为 warm。
+- 纯对话分析：如果用户只是把 HOI4 script 贴在对话里，没有 workspace 或已保存文件，就直接用 `content` 调用 `validate_hoi4_file`。不需要真实路径；省略 `path` 时，RHoiScribe 会使用只存在于内存中的虚拟 HOI4 路径。
 - 如果 mod root、rules override、vanilla root、ignore globs 或语言配置变化，请重新打开工作区。
 - 项目诊断：`validate_hoi4_project` 默认使用 hybrid 模式，也就是 CWT 加 legacy checks。需要旧行为时使用 `validation_mode = "legacy"`；只看 CWT 时使用 `validation_mode = "cwt"`；需要明确两者都跑时使用 `validation_mode = "hybrid"`。
 - 单文件诊断：`validate_hoi4_file` 可以验证一个已保存文件，也可以验证未保存文本；如果传入 resident workspace handle，会结合已预热状态。

@@ -20,7 +20,8 @@ This document describes RHoiScribe capabilities after the MCP server or Skill pa
 - CWT memory policy: embedded CWT rules are loaded from the compiled Cargo git dependency's static source table into process memory.
 - RHoiScribe does not extract rule files, create CWT caches, create CWT lock files, or store CWT language state in RNMDB.
 - CWT language tools skip RHoiScribe tool-call logging so CWT diagnostics and workspace language state are not written to the `.rhoiscribe` log store.
-- Workspace warm-up: call `open_hoi4_language_workspace` with the current mod root early in MCP sessions, then poll `get_hoi4_language_status` until the workspace is warm.
+- Workspace warm-up: when a mod workspace is available, call `discover_hoi4_environment` if the HOI4 game root is not already known, pass `game_path` as `vanilla_root` to `open_hoi4_language_workspace` when vanilla-aware CWT context is useful, then poll `get_hoi4_language_status` until the workspace is warm.
+- Conversation-only analysis: if the user only pasted HOI4 script in chat and no workspace or saved file is involved, call `validate_hoi4_file` with `content`. A real path is not required; RHoiScribe uses an in-memory virtual HOI4 path when `path` is omitted.
 - Reopen the workspace when the mod root, rules override, vanilla root, ignore globs, or language configuration changes.
 - Project diagnostics: `validate_hoi4_project` defaults to hybrid CWT plus legacy checks. Use `validation_mode = "legacy"` for legacy-only behavior, `validation_mode = "cwt"` for CWT-only behavior, or `validation_mode = "hybrid"` explicitly when you want both.
 - File diagnostics: `validate_hoi4_file` validates one saved file or unsaved content with embedded rules and an optional resident workspace handle.

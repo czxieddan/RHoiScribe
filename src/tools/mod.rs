@@ -106,7 +106,7 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec {
         name: "open_hoi4_language_workspace",
         title: "Open HOI4 language workspace",
-        description: "Configure and warm a resident CWT-backed HOI4 language workspace in process memory. Uses embedded GitHub CWT rules by default and does not extract, cache, lock, or write CWT runtime state on disk.",
+        description: "Configure and warm a resident CWT-backed HOI4 language workspace in process memory. When local game context is needed, pass discover_hoi4_environment.game_path as vanilla_root and use mode=full. Uses embedded GitHub CWT rules by default and does not extract, cache, lock, or write CWT runtime state on disk.",
         required: &["workspace_root"],
         handler: call_open_hoi4_language_workspace,
     },
@@ -120,8 +120,8 @@ const TOOL_SPECS: &[ToolSpec] = &[
     ToolSpec {
         name: "validate_hoi4_file",
         title: "Validate HOI4 file",
-        description: "Validate one HOI4 script path or unsaved content with embedded CWT rules and resident in-memory workspace state when a handle is provided. Does not write CWT diagnostics or rule state to disk.",
-        required: &["path"],
+        description: "Validate one HOI4 script path or unsaved conversation content with embedded CWT rules and resident in-memory workspace state when a handle is provided. If content is supplied without path, RHoiScribe uses an in-memory virtual HOI4 path. Does not write CWT diagnostics or rule state to disk.",
+        required: &[],
         handler: call_validate_hoi4_file,
     },
     ToolSpec {
@@ -1362,12 +1362,61 @@ fn input_schema(tool_name: &str, required: &[&str]) -> JsonObject {
 
 fn tool_properties(tool_name: &str) -> Map<String, Value> {
     match tool_name {
+        "open_hoi4_language_workspace" => open_language_workspace_properties(),
+        "validate_hoi4_file" => validate_hoi4_file_properties(),
         "generate_focus_batch" => focus_batch_properties(),
         "generate_decision_batch" => decision_batch_properties(),
         "query_tool_logs" => query_tool_logs_properties(),
         "export_tool_logs" => export_tool_logs_properties(),
         _ => Map::new(),
     }
+}
+
+fn open_language_workspace_properties() -> Map<String, Value> {
+    Map::from_iter([
+        text_property("workspace_root", "Current HOI4 mod workspace root."),
+        text_property(
+            "vanilla_root",
+            "Optional HOI4 game root, normally discover_hoi4_environment.game_path.",
+        ),
+        text_property(
+            "mode",
+            "Use mod_only for fast mod checks or full to index vanilla_root in memory.",
+        ),
+        array_property(
+            "ignore_globs",
+            "Optional path patterns skipped during in-memory workspace discovery.",
+        ),
+        array_property(
+            "localisation_languages",
+            "Optional localisation languages used by the language workspace.",
+        ),
+        text_property(
+            "rules_path",
+            "Advanced read-only external CWT rules override. Omit for embedded rules.",
+        ),
+    ])
+}
+
+fn validate_hoi4_file_properties() -> Map<String, Value> {
+    Map::from_iter([
+        text_property(
+            "handle_id",
+            "Optional resident CWT workspace handle returned by open_hoi4_language_workspace.",
+        ),
+        text_property(
+            "workspace_root",
+            "Optional workspace root used to resolve relative saved paths.",
+        ),
+        text_property(
+            "path",
+            "Optional saved or virtual mod-relative HOI4 path. Omit when only conversation content is available.",
+        ),
+        text_property(
+            "content",
+            "Optional unsaved content to validate entirely in memory.",
+        ),
+    ])
 }
 
 fn focus_batch_properties() -> Map<String, Value> {

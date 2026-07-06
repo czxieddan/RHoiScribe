@@ -75,7 +75,7 @@ pub struct GetHoi4LanguageStatusRequest {
 pub struct ValidateHoi4FileRequest {
     pub handle_id: Option<String>,
     pub workspace_root: Option<String>,
-    pub path: String,
+    pub path: Option<String>,
     pub content: Option<String>,
 }
 
@@ -118,6 +118,8 @@ pub struct Hoi4LanguageWorkspaceStatus {
     pub generation: u64,
     pub state: String,
     pub indexed_file_count: usize,
+    pub workspace_file_count: usize,
+    pub vanilla_file_count: usize,
     pub validation_diagnostic_count: usize,
     pub rule_diagnostic_count: usize,
     pub stale: bool,
@@ -233,11 +235,16 @@ pub fn validate_file(
     request: ValidateHoi4FileRequest,
 ) -> Result<ValidateHoi4FileResult, ToolError> {
     let validation_context = rules_for_file_validation(&runtime, &request)?;
-    let content = file_content(&request, validation_context.workspace_root.as_deref())?;
-    let diagnostics = validate_content(&validation_context.rules, &request.path, &content);
+    let path = validation_path(&request)?;
+    let content = file_content(
+        &request,
+        validation_context.workspace_root.as_deref(),
+        &path,
+    )?;
+    let diagnostics = validate_content(&validation_context.rules, &path, &content);
 
     Ok(ValidateHoi4FileResult {
-        path: normalize_path(&request.path),
+        path: normalize_path(&path),
         handle_id: validation_context.handle_id,
         status: diagnostics_status(&diagnostics),
         diagnostics,
@@ -286,14 +293,13 @@ fn cwt_project_validation(
 
     let mut checks = Vec::new();
     for file in &snapshot.files {
-        if !is_script_path(&file.path) {
+        if file.root_role != "mod" || !is_script_path(&file.path) {
             continue;
         }
-        let full_path = join_relative_path(&snapshot.workspace_root, &file.path);
-        let content = fs::read_to_string(&full_path).map_err(|error| {
+        let content = fs::read_to_string(&file.absolute_path).map_err(|error| {
             ToolError::InvalidRequest(format!(
                 "failed to read CWT validation file `{}`: {}",
-                path_to_string(&full_path),
+                path_to_string(&file.absolute_path),
                 error
             ))
         })?;
@@ -319,6 +325,11 @@ fn cwt_project_validation(
 
     let status = project_status(&checks);
     let indexed_file_count = snapshot.files.len();
+    let workspace_file_count = snapshot
+        .files
+        .iter()
+        .filter(|file| file.root_role == "mod")
+        .count();
     let diagnostic_count = checks
         .iter()
         .filter(|check| check.id != "cwt_diagnostics" || check.status != "green")
@@ -327,7 +338,7 @@ fn cwt_project_validation(
     Ok(ProjectValidationResult {
         status,
         index_summary: format!(
-            "CWT checked {indexed_file_count} indexed file(s), {diagnostic_count} diagnostic(s)"
+            "CWT indexed {indexed_file_count} file(s) and checked {workspace_file_count} workspace file(s), {diagnostic_count} diagnostic(s)"
         ),
         messages: vec![
             "CWT validation mode uses embedded GitHub rules in process memory only.".to_string(),
@@ -522,16 +533,15 @@ fn rules_for_file_validation(
 fn file_content(
     request: &ValidateHoi4FileRequest,
     workspace_root: Option<&Path>,
+    path: &str,
 ) -> Result<String, ToolError> {
     if let Some(content) = &request.content {
         return Ok(content.clone());
     }
 
     let path = match workspace_root {
-        Some(root) if !Path::new(&request.path).is_absolute() => {
-            join_relative_path(root, &request.path)
-        }
-        _ => PathBuf::from(&request.path),
+        Some(root) if !Path::new(path).is_absolute() => join_relative_path(root, path),
+        _ => PathBuf::from(path),
     };
     fs::read_to_string(&path).map_err(|error| {
         ToolError::InvalidRequest(format!(
@@ -540,6 +550,45 @@ fn file_content(
             error
         ))
     })
+}
+
+fn validation_path(request: &ValidateHoi4FileRequest) -> Result<String, ToolError> {
+    if let Some(path) = request
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    {
+        return Ok(path.to_string());
+    }
+
+    let Some(content) = request.content.as_deref() else {
+        return Err(ToolError::InvalidRequest(
+            "path is required when content is omitted".to_string(),
+        ));
+    };
+
+    Ok(conversation_virtual_path(content).to_string())
+}
+
+fn conversation_virtual_path(content: &str) -> &'static str {
+    let normalized = content.to_ascii_lowercase();
+    if normalized.contains("country_event")
+        || normalized.contains("news_event")
+        || normalized.contains("state_event")
+        || normalized.contains("add_namespace")
+    {
+        "events/rhoiscribe_conversation.txt"
+    } else if normalized.contains("focus_tree") || normalized.contains("focus =") {
+        "common/national_focus/rhoiscribe_conversation.txt"
+    } else if normalized.contains("spritetype")
+        || normalized.contains("containerwindowtype")
+        || normalized.contains("quadtexturesprite")
+    {
+        "interface/rhoiscribe_conversation.gui"
+    } else {
+        "common/scripted_effects/rhoiscribe_conversation.txt"
+    }
 }
 
 fn validate_content(rules: &LoadedCwtRules, path: &str, content: &str) -> Vec<Hoi4Diagnostic> {
@@ -649,11 +698,20 @@ fn language_status(
     status: CwtWorkspaceStatus,
     vanilla_status: String,
 ) -> Hoi4LanguageWorkspaceStatus {
+    let vanilla_status =
+        if status.vanilla_file_count > 0 && vanilla_status.starts_with("configured:") {
+            vanilla_status.replacen("configured:", "indexed:", 1)
+        } else {
+            vanilla_status
+        };
+
     Hoi4LanguageWorkspaceStatus {
         handle_id: status.handle_id,
         generation: status.generation,
         state: warm_state(status.state),
         indexed_file_count: status.indexed_file_count,
+        workspace_file_count: status.workspace_file_count,
+        vanilla_file_count: status.vanilla_file_count,
         validation_diagnostic_count: status.validation_diagnostic_count,
         rule_diagnostic_count: status.rule_diagnostic_count,
         stale: status.stale,

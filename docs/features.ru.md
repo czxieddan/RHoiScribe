@@ -20,7 +20,8 @@
 - CWT memory policy: embedded CWT rules читаются из static source table, скомпилированной из Cargo git dependency, и живут в process memory.
 - RHoiScribe не распаковывает rule files, не создает CWT caches или CWT lock files и не сохраняет CWT language state в RNMDB.
 - CWT language tools пропускают RHoiScribe tool-call logging, поэтому CWT diagnostics и workspace language state не записываются в `.rhoiscribe` log store.
-- Workspace warm-up: в начале MCP session вызовите `open_hoi4_language_workspace` с current mod root, затем polling `get_hoi4_language_status`, пока workspace не станет warm.
+- Workspace warm-up: если доступен mod workspace и HOI4 game root еще не известен, сначала вызовите `discover_hoi4_environment`. Когда нужен vanilla-aware CWT context, передайте returned `game_path` как `vanilla_root` в `open_hoi4_language_workspace`, затем polling `get_hoi4_language_status`, пока workspace не станет warm.
+- Conversation-only analysis: если пользователь просто вставил HOI4 script в чат и нет workspace или saved file, вызовите `validate_hoi4_file` с `content`. Реальный path не обязателен; если `path` omitted, RHoiScribe использует virtual HOI4 path только в memory.
 - Переоткройте workspace, если изменились mod root, rules override, vanilla root, ignore globs или language configuration.
 - Project diagnostics: `validate_hoi4_project` по умолчанию использует hybrid CWT plus legacy checks. Для legacy-only используйте `validation_mode = "legacy"`; только для CWT — `validation_mode = "cwt"`; для явного запуска обоих режимов — `validation_mode = "hybrid"`.
 - File diagnostics: `validate_hoi4_file` проверяет saved file или unsaved content и использует resident workspace handle, если он передан.

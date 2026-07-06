@@ -68,6 +68,8 @@ pub struct CwtWorkspaceStatus {
     pub generation: u64,
     pub state: CwtWorkspaceWarmState,
     pub indexed_file_count: usize,
+    pub workspace_file_count: usize,
+    pub vanilla_file_count: usize,
     pub validation_diagnostic_count: usize,
     pub rule_diagnostic_count: usize,
     pub stale: bool,
@@ -92,6 +94,8 @@ pub struct CwtWorkspaceSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CwtIndexedFile {
     pub path: String,
+    pub absolute_path: PathBuf,
+    pub root_role: String,
     pub byte_len: u64,
 }
 
@@ -197,6 +201,8 @@ impl CwtWorkspaceSnapshot {
             generation: state.generation,
             state: state.warm_state.clone(),
             indexed_file_count: self.files.len(),
+            workspace_file_count: count_root_role(&self.files, "mod"),
+            vanilla_file_count: count_root_role(&self.files, "game"),
             validation_diagnostic_count: self.validation_diagnostic_count,
             rule_diagnostic_count: self.rule_diagnostics.len(),
             stale: state.stale,
@@ -224,6 +230,8 @@ impl CwtWorkspaceState {
                 generation: self.generation,
                 state: self.warm_state.clone(),
                 indexed_file_count: 0,
+                workspace_file_count: 0,
+                vanilla_file_count: 0,
                 validation_diagnostic_count: 0,
                 rule_diagnostic_count: 0,
                 stale: self.stale,
@@ -283,7 +291,7 @@ fn build_workspace_snapshot(
     let rule_diagnostics = rules.rule_diagnostics().to_vec();
     let rules = Arc::new(rules);
     let files = discover_workspace_files(config)?;
-    let validation_diagnostic_count = count_validation_diagnostics(&rules, &files, config);
+    let validation_diagnostic_count = count_validation_diagnostics(&rules, &files);
 
     Ok(CwtWorkspaceSnapshot {
         generation,
@@ -329,9 +337,15 @@ fn discover_workspace_files(
     collect_workspace_files(
         &config.workspace_root,
         &config.workspace_root,
+        "mod",
         config,
         &mut files,
     )?;
+    if config.mode == CwtWorkspaceMode::Full
+        && let Some(vanilla_root) = &config.vanilla_root
+    {
+        collect_workspace_files(vanilla_root, vanilla_root, "game", config, &mut files)?;
+    }
     files.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(files)
 }
@@ -339,6 +353,7 @@ fn discover_workspace_files(
 fn collect_workspace_files(
     root: &Path,
     directory: &Path,
+    root_role: &str,
     config: &CwtWorkspaceConfig,
     files: &mut Vec<CwtIndexedFile>,
 ) -> Result<(), CwtWorkspaceError> {
@@ -362,7 +377,7 @@ fn collect_workspace_files(
 
         if file_type.is_dir() {
             if !is_ignored(root, &path, config) {
-                collect_workspace_files(root, &path, config, files)?;
+                collect_workspace_files(root, &path, root_role, config, files)?;
             }
         } else if file_type.is_file() && is_language_file(&path) {
             let relative_path = relative_path(root, &path);
@@ -374,6 +389,8 @@ fn collect_workspace_files(
                     })?;
                 files.push(CwtIndexedFile {
                     path: relative_path,
+                    absolute_path: path,
+                    root_role: root_role.to_string(),
                     byte_len: metadata.len(),
                 });
             }
@@ -383,17 +400,12 @@ fn collect_workspace_files(
     Ok(())
 }
 
-fn count_validation_diagnostics(
-    rules: &LoadedCwtRules,
-    files: &[CwtIndexedFile],
-    config: &CwtWorkspaceConfig,
-) -> usize {
+fn count_validation_diagnostics(rules: &LoadedCwtRules, files: &[CwtIndexedFile]) -> usize {
     files
         .iter()
-        .filter(|file| is_script_path(&file.path))
+        .filter(|file| file.root_role == "mod" && is_script_path(&file.path))
         .filter_map(|file| {
-            let full_path = join_relative_path(&config.workspace_root, &file.path);
-            fs::read_to_string(full_path)
+            fs::read_to_string(&file.absolute_path)
                 .ok()
                 .map(|content| (file, content))
         })
@@ -423,6 +435,13 @@ fn is_script_path(path: &str) -> bool {
         extension.to_ascii_lowercase().as_str(),
         "txt" | "gui" | "gfx" | "sfx" | "asset" | "map"
     )
+}
+
+fn count_root_role(files: &[CwtIndexedFile], root_role: &str) -> usize {
+    files
+        .iter()
+        .filter(|file| file.root_role == root_role)
+        .count()
 }
 
 fn is_ignored(root: &Path, path: &Path, config: &CwtWorkspaceConfig) -> bool {
@@ -461,12 +480,6 @@ fn relative_path(root: &Path, path: &Path) -> String {
         .unwrap_or(path)
         .to_string_lossy()
         .replace('\\', "/")
-}
-
-fn join_relative_path(root: &Path, path: &str) -> PathBuf {
-    path.split('/')
-        .filter(|part| !part.is_empty())
-        .fold(root.to_path_buf(), |current, part| current.join(part))
 }
 
 fn rules_source_id(source: &CwtRulesSource) -> String {
