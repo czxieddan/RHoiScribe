@@ -20,6 +20,7 @@
 //------------------------------------------------------------------------------------
 
 mod cwt_diagnostics;
+mod cwt_intelligence;
 mod environment;
 mod error_log;
 mod gui_gfx_asset;
@@ -53,6 +54,13 @@ pub use cwt_diagnostics::{
     GetHoi4LanguageStatusRequest, GetHoi4LanguageStatusResult, Hoi4Diagnostic,
     Hoi4LanguageWorkspaceStatus, OpenHoi4LanguageWorkspaceRequest, OpenHoi4LanguageWorkspaceResult,
     ValidateHoi4FileRequest, ValidateHoi4FileResult,
+};
+pub use cwt_intelligence::{
+    ExplainHoi4DiagnosticRequest, ExplainHoi4DiagnosticResult, FindHoi4DefinitionRequest,
+    FindHoi4DefinitionResult, FindHoi4ReferencesRequest, FindHoi4ReferencesResult,
+    Hoi4CompletionSuggestion, Hoi4LanguageSymbol, InspectHoi4ScopeRequest, InspectHoi4ScopeResult,
+    InspectHoi4TypeRuleRequest, InspectHoi4TypeRuleResult, ListHoi4WorkspaceSymbolsRequest,
+    ListHoi4WorkspaceSymbolsResult, SuggestHoi4CompletionRequest, SuggestHoi4CompletionResult,
 };
 pub use environment::{
     DiscoverHoi4EnvironmentRequest, Hoi4DebugRunRequest, Hoi4DebugRunResult, Hoi4EnvironmentResult,
@@ -110,6 +118,55 @@ const TOOL_SPECS: &[ToolSpec] = &[
         description: "Validate one HOI4 script path or unsaved content with embedded CWT rules and resident in-memory workspace state when a handle is provided. Does not write CWT diagnostics or rule state to disk.",
         required: &["path"],
         handler: call_validate_hoi4_file,
+    },
+    ToolSpec {
+        name: "explain_hoi4_diagnostic",
+        title: "Explain HOI4 diagnostic",
+        description: "Explain a CWT/RHoiScribe diagnostic code or message for an agent, including likely meaning, repair guidance, related language tools, embedded rules revision, and no-disk runtime policy.",
+        required: &[],
+        handler: call_explain_hoi4_diagnostic,
+    },
+    ToolSpec {
+        name: "list_hoi4_workspace_symbols",
+        title: "List HOI4 workspace symbols",
+        description: "List HOI4 symbols from a resident CWT workspace handle or provided roots, including paths, lines, kind, scope/rule context, source, and confidence. Uses process memory and writes no CWT state.",
+        required: &[],
+        handler: call_list_hoi4_workspace_symbols,
+    },
+    ToolSpec {
+        name: "find_hoi4_definition",
+        title: "Find HOI4 definition",
+        description: "Resolve a HOI4 identifier, localisation key, or indexed symbol to definition locations with path, line, symbol kind, source, confidence, and embedded CWT rule revision.",
+        required: &["identifier"],
+        handler: call_find_hoi4_definition,
+    },
+    ToolSpec {
+        name: "find_hoi4_references",
+        title: "Find HOI4 references",
+        description: "Find references to a HOI4 identifier or symbol in a resident workspace or provided roots with path, line, context, source, confidence, and embedded CWT rule revision.",
+        required: &["identifier"],
+        handler: call_find_hoi4_references,
+    },
+    ToolSpec {
+        name: "suggest_hoi4_completion",
+        title: "Suggest HOI4 completion",
+        description: "Suggest context-aware HOI4 keys, blocks, effects, triggers, and workspace symbols for a file position from embedded CWT profiles and process-local workspace indexes.",
+        required: &["path"],
+        handler: call_suggest_hoi4_completion,
+    },
+    ToolSpec {
+        name: "inspect_hoi4_scope",
+        title: "Inspect HOI4 scope",
+        description: "Inspect the likely HOI4/CWT scope for a file and node path, returning allowed effect/trigger examples, rule source path, confidence, and current TypeIndex limitations.",
+        required: &["path"],
+        handler: call_inspect_hoi4_scope,
+    },
+    ToolSpec {
+        name: "inspect_hoi4_type_rule",
+        title: "Inspect HOI4 type rule",
+        description: "Inspect the embedded CWT rule profile that applies to a file path and optional node path, including rule/type name, source revision, virtual rule path, confidence, and limitations.",
+        required: &["path"],
+        handler: call_inspect_hoi4_type_rule,
     },
     ToolSpec {
         name: "generate_localisation_batch",
@@ -597,7 +654,9 @@ impl ToolCatalog {
         arguments: Value,
         result: &Result<CallToolResult, ToolError>,
     ) -> Result<(), ToolError> {
-        if cwt_diagnostics::should_skip_tool_log(name, &arguments) {
+        if cwt_diagnostics::should_skip_tool_log(name, &arguments)
+            || cwt_intelligence::is_cwt_intelligence_tool(name)
+        {
             return Ok(());
         }
 
@@ -968,6 +1027,82 @@ fn call_validate_hoi4_file(
 ) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<ValidateHoi4FileRequest>(arguments)?;
     Ok(structured_result(cwt_diagnostics::validate_file(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_explain_hoi4_diagnostic(
+    _context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<ExplainHoi4DiagnosticRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::explain_diagnostic(
+        request,
+    )?))
+}
+
+fn call_list_hoi4_workspace_symbols(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<ListHoi4WorkspaceSymbolsRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::list_workspace_symbols(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_find_hoi4_definition(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<FindHoi4DefinitionRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::find_definition(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_find_hoi4_references(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<FindHoi4ReferencesRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::find_references(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_suggest_hoi4_completion(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<SuggestHoi4CompletionRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::suggest_completion(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_inspect_hoi4_scope(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<InspectHoi4ScopeRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::inspect_scope(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_inspect_hoi4_type_rule(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<InspectHoi4TypeRuleRequest>(arguments)?;
+    Ok(structured_result(cwt_intelligence::inspect_type_rule(
         context.runtime(),
         request,
     )?))
