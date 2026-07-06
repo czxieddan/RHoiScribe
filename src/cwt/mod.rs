@@ -1,5 +1,5 @@
 //------------------------------------------------------------------------------------
-// lib.rs -- Part of RHoiScribe
+// mod.rs -- Part of RHoiScribe
 //
 // Copyright (C) 2026 CzXieDdan. All rights reserved.
 //
@@ -19,10 +19,4 @@
 // https://github.com/czxieddan/RHoiScribe
 //------------------------------------------------------------------------------------
 
-pub mod cli;
-pub mod cwt;
-pub mod prompts;
-pub mod resources;
-pub mod server;
-pub mod skill;
-pub mod tools;
+pub mod rules;
