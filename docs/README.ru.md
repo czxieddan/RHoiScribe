@@ -11,7 +11,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/czxieddan/RHoiScribe?style=for-the-badge&label=Stars)](https://github.com/czxieddan/RHoiScribe/stargazers)
 [![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=for-the-badge)](../LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2024-orange?style=for-the-badge)](../Cargo.toml)
-[![MCP](https://img.shields.io/badge/MCP-stdio-green?style=for-the-badge)](client-setup.md)
+[![MCP](https://img.shields.io/badge/MCP-stdio-green?style=for-the-badge)](client-setup.ru.md)
 
 Если RHoiScribe помогает вашему modding workflow, Star помогает другим авторам HOI4 mods найти проект.
 
@@ -79,6 +79,8 @@ RHoiScribe дает agents локальный слой знаний HOI4, reusab
 
 Skill package — самый быстрый способ дать совместимому agent локальный доступ без изменения MCP configuration. Для полной функциональности и более плавной работы используйте MCP server, если ваш agent поддерживает MCP.
 
+Если нужен более подробный разбор инструментов и рабочего порядка, откройте [руководство по возможностям](features.ru.md). Подключение клиентов и примеры конфигурации вынесены в [руководство по MCP-настройке](client-setup.ru.md).
+
 <h2 align="center">Быстрый старт</h2>
 
 Скачайте готовый binary из [GitHub Releases](https://github.com/czxieddan/RHoiScribe/releases):
@@ -118,7 +120,7 @@ Source build помещает исполняемый файл в `<ABSOLUTE_PATH
 ./rhoiscribe-macos-universal --print-command
 ```
 
-Примеры конфигурации для Codex, Claude Code и generic MCP см. в [client-setup.md](client-setup.md).
+Примеры конфигурации для Codex, Claude Code и generic MCP см. в [client-setup.ru.md](client-setup.ru.md).
 
 <h2 align="center">Помогите улучшить RHoiScribe</h2>
 
@@ -150,6 +152,6 @@ Rchadow provides playset storage, HOI4 mod discovery, launcher-compatible load f
 <div align="center">
   <h3>Contributors</h3>
   <a href="https://github.com/czxieddan/RHoiScribe/graphs/contributors">
-    <img src="https://stg.contrib.rocks/image?repo=czxieddan/RHoiScribe" alt="RHoiScribe contributors">
+    <img src="https://contrib.rocks/image?repo=czxieddan/RHoiScribe" alt="RHoiScribe contributors">
   </a>
 </div>

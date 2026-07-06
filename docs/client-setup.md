@@ -1,5 +1,7 @@
 # MCP Client Setup
 
+[简体中文](client-setup.zh-CN.md) | [Русский](client-setup.ru.md) | [日本語](client-setup.ja.md)
+
 RHoiScribe is a local MCP server launched through stdio. It is intended for Codex, Claude Code, and other MCP-compatible clients that can start a local command.
 
 For a feature-level overview after setup, see [features.md](features.md).

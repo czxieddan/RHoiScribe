@@ -1,5 +1,7 @@
 # RHoiScribe Feature Guide
 
+[简体中文](features.zh-CN.md) | [Русский](features.ru.md) | [日本語](features.ja.md)
+
 This document describes RHoiScribe capabilities after the MCP server or Skill package is configured. For installation and client configuration, see [client-setup.md](client-setup.md).
 
 ## Runtime Model

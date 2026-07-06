@@ -79,6 +79,8 @@ At a high level, it helps agents with:
 
 The bundled Skill package is the quickest way to give compatible agents local access without editing MCP configuration. For complete functionality and a smoother experience, use the MCP server when your agent supports it.
 
+For a closer look at the tools and recommended workflows, read the [feature guide](docs/features.md). For client configuration, see the [MCP setup guide](docs/client-setup.md).
+
 <h2 align="center">Quick Start</h2>
 
 Download a prebuilt binary from [GitHub Releases](https://github.com/czxieddan/RHoiScribe/releases):
@@ -150,6 +152,6 @@ Rchadow provides playset storage, HOI4 mod discovery, launcher-compatible load f
 <div align="center">
   <h3>Contributors</h3>
   <a href="https://github.com/czxieddan/RHoiScribe/graphs/contributors">
-    <img src="https://stg.contrib.rocks/image?repo=czxieddan/RHoiScribe" alt="RHoiScribe contributors">
+    <img src="https://contrib.rocks/image?repo=czxieddan/RHoiScribe" alt="RHoiScribe contributors">
   </a>
 </div>
