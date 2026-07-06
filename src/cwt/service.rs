@@ -87,6 +87,27 @@ impl CwtLanguageService {
         Ok(handle)
     }
 
+    pub fn open_workspace_blocking(
+        &self,
+        config: CwtWorkspaceConfig,
+    ) -> Result<Arc<CwtWorkspaceHandle>, CwtLanguageServiceError> {
+        let id = workspace_handle_id(&config);
+        let handle = {
+            let mut workspaces = self
+                .workspaces
+                .write()
+                .map_err(|_| CwtLanguageServiceError::RegistryLockPoisoned)?;
+            workspaces
+                .entry(id.clone())
+                .or_insert_with(|| Arc::new(CwtWorkspaceHandle::new(id, config)))
+                .clone()
+        };
+        handle
+            .refresh_blocking()
+            .map_err(CwtLanguageServiceError::Workspace)?;
+        Ok(handle)
+    }
+
     pub fn get_workspace(
         &self,
         handle_id: &str,

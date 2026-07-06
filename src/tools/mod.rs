@@ -19,6 +19,7 @@
 // https://github.com/czxieddan/RHoiScribe
 //------------------------------------------------------------------------------------
 
+mod cwt_diagnostics;
 mod environment;
 mod error_log;
 mod gui_gfx_asset;
@@ -48,6 +49,11 @@ use crate::{
     resources::{KNOWLEDGE_TOPIC_URI_PREFIX, KnowledgeCatalog},
 };
 
+pub use cwt_diagnostics::{
+    GetHoi4LanguageStatusRequest, GetHoi4LanguageStatusResult, Hoi4Diagnostic,
+    Hoi4LanguageWorkspaceStatus, OpenHoi4LanguageWorkspaceRequest, OpenHoi4LanguageWorkspaceResult,
+    ValidateHoi4FileRequest, ValidateHoi4FileResult,
+};
 pub use environment::{
     DiscoverHoi4EnvironmentRequest, Hoi4DebugRunRequest, Hoi4DebugRunResult, Hoi4EnvironmentResult,
     Hoi4QualityCheck,
@@ -84,6 +90,27 @@ pub use unique_scan::{
 pub const MODULE_PURPOSE: &str = "batch generation and validation tools";
 
 const TOOL_SPECS: &[ToolSpec] = &[
+    ToolSpec {
+        name: "open_hoi4_language_workspace",
+        title: "Open HOI4 language workspace",
+        description: "Configure and warm a resident CWT-backed HOI4 language workspace in process memory. Uses embedded GitHub CWT rules by default and does not extract, cache, lock, or write CWT runtime state on disk.",
+        required: &["workspace_root"],
+        handler: call_open_hoi4_language_workspace,
+    },
+    ToolSpec {
+        name: "get_hoi4_language_status",
+        title: "Get HOI4 language status",
+        description: "Return resident CWT language workspace warm-up status, rule revision/hash, indexed file counts, diagnostic counts, stale flags, and no-disk memory mode.",
+        required: &[],
+        handler: call_get_hoi4_language_status,
+    },
+    ToolSpec {
+        name: "validate_hoi4_file",
+        title: "Validate HOI4 file",
+        description: "Validate one HOI4 script path or unsaved content with embedded CWT rules and resident in-memory workspace state when a handle is provided. Does not write CWT diagnostics or rule state to disk.",
+        required: &["path"],
+        handler: call_validate_hoi4_file,
+    },
     ToolSpec {
         name: "generate_localisation_batch",
         title: "Generate localisation batch",
@@ -570,6 +597,10 @@ impl ToolCatalog {
         arguments: Value,
         result: &Result<CallToolResult, ToolError>,
     ) -> Result<(), ToolError> {
+        if cwt_diagnostics::should_skip_tool_log(name, &arguments) {
+            return Ok(());
+        }
+
         let store_path = arguments
             .as_object()
             .and_then(tool_logs::tool_log_store_path_from_arguments);
@@ -909,6 +940,39 @@ fn call_generate_localisation_batch(
     )?))
 }
 
+fn call_open_hoi4_language_workspace(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<OpenHoi4LanguageWorkspaceRequest>(arguments)?;
+    Ok(structured_result(cwt_diagnostics::open_language_workspace(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_get_hoi4_language_status(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<GetHoi4LanguageStatusRequest>(arguments)?;
+    Ok(structured_result(cwt_diagnostics::get_language_status(
+        context.runtime(),
+        request,
+    )?))
+}
+
+fn call_validate_hoi4_file(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<ValidateHoi4FileRequest>(arguments)?;
+    Ok(structured_result(cwt_diagnostics::validate_file(
+        context.runtime(),
+        request,
+    )?))
+}
+
 fn call_generate_focus_batch(
     _context: &ToolContext,
     arguments: JsonObject,
@@ -1052,11 +1116,12 @@ fn call_index_hoi4_project(
 }
 
 fn call_validate_hoi4_project(
-    _context: &ToolContext,
+    context: &ToolContext,
     arguments: JsonObject,
 ) -> Result<CallToolResult, ToolError> {
-    let request = parse_arguments::<ProjectValidationRequest>(arguments)?;
-    Ok(structured_result(ToolEngine::validate_hoi4_project(
+    let request = parse_arguments::<cwt_diagnostics::ProjectValidationToolRequest>(arguments)?;
+    Ok(structured_result(cwt_diagnostics::validate_project(
+        context.runtime(),
         request,
     )?))
 }
