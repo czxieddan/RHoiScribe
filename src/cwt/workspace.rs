@@ -27,8 +27,9 @@ use std::{
     thread,
 };
 
+use super::hoi4_config::HOI4_CWT_CONFIG;
 use super::rules::{
-    CwtRuleDiagnostic, LoadedCwtRules, load_bundled_cwt_rules, load_external_cwt_rules,
+    CwtRuleDiagnostic, LoadedCwtRules, load_embedded_hoi4_cwt_rules, load_external_cwt_rules,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,7 +44,7 @@ pub struct CwtWorkspaceConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CwtRulesSource {
-    Bundled,
+    EmbeddedGithubConfig,
     ExternalPath(PathBuf),
 }
 
@@ -114,7 +115,7 @@ impl Default for CwtWorkspaceConfig {
     fn default() -> Self {
         Self {
             workspace_root: PathBuf::new(),
-            rules_source: CwtRulesSource::Bundled,
+            rules_source: CwtRulesSource::EmbeddedGithubConfig,
             vanilla_root: None,
             ignore_globs: Vec::new(),
             localisation_languages: vec!["english".to_string()],
@@ -275,7 +276,7 @@ fn build_workspace_snapshot(
     config: &CwtWorkspaceConfig,
 ) -> Result<CwtWorkspaceSnapshot, CwtWorkspaceError> {
     let rules = match &config.rules_source {
-        CwtRulesSource::Bundled => load_bundled_cwt_rules(),
+        CwtRulesSource::EmbeddedGithubConfig => load_embedded_hoi4_cwt_rules(),
         CwtRulesSource::ExternalPath(path) => load_external_cwt_rules(path),
     }
     .map_err(|error| CwtWorkspaceError::Rules(error.to_string()))?;
@@ -470,7 +471,7 @@ fn join_relative_path(root: &Path, path: &str) -> PathBuf {
 
 fn rules_source_id(source: &CwtRulesSource) -> String {
     match source {
-        CwtRulesSource::Bundled => "bundled".to_string(),
+        CwtRulesSource::EmbeddedGithubConfig => HOI4_CWT_CONFIG.embedded_source_id(),
         CwtRulesSource::ExternalPath(path) => format!("external:{}", path_to_string(path)),
     }
 }

@@ -21,30 +21,21 @@
 
 use std::fmt::Write as _;
 
-use super::cwt_bundle;
+use crate::cwt::{
+    hoi4_config::HOI4_CWT_CONFIG,
+    rules::{
+        HOI4_CWT_CONFIG_CONTENT_SHA256, HOI4_CWT_CONFIG_SOURCE_COUNT, HOI4_CWT_CONFIG_TOTAL_BYTES,
+        hoi4_cwt_config_archive_url,
+    },
+};
 
 pub const CWT_CATALOG_URI: &str = "rhoiscribe://hoi4/cwt/catalog";
 pub const CWT_METADATA_URI: &str = "rhoiscribe://hoi4/cwt/metadata";
-pub const CWT_SOURCE_URI_PREFIX: &str = "rhoiscribe://hoi4/cwt/source/";
-
-const VIRTUAL_SOURCE_PREFIX: &str = "bundled://hoi4-cwt/config/";
-const CWT_RESOURCE_SOURCE_FORMAT: &str = "cwtools-hoi4-config";
-const CWT_RUNTIME_STORAGE: &str = "compiled Rust static strings; no runtime CWT disk state";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CwtResourceCatalog {
     catalog_index: String,
     metadata: String,
-    source_count: usize,
-    rule_source_count: usize,
-    total_bytes: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Hoi4CwtSource {
-    pub path: &'static str,
-    pub content: &'static str,
-    pub mime_type: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,65 +56,33 @@ pub(crate) struct CwtResourceText {
 
 impl CwtResourceCatalog {
     pub fn load_embedded() -> Self {
-        let source_count = cwt_bundle::EMBEDDED_CWT_CONFIG_SOURCES.len();
-        let rule_source_count = embedded_hoi4_cwt_sources()
-            .filter(Hoi4CwtSource::is_rule_source)
-            .count();
-        let total_bytes = embedded_hoi4_cwt_sources()
-            .map(|source| source.content.len())
-            .sum();
-
         Self {
-            catalog_index: catalog_index_toml(source_count, rule_source_count, total_bytes),
-            metadata: metadata_markdown(source_count, rule_source_count, total_bytes),
-            source_count,
-            rule_source_count,
-            total_bytes,
+            catalog_index: catalog_index_toml(),
+            metadata: metadata_markdown(),
         }
     }
 
-    pub fn source_count(&self) -> usize {
-        self.source_count
-    }
-
-    pub fn rule_source_count(&self) -> usize {
-        self.rule_source_count
-    }
-
-    pub fn total_bytes(&self) -> usize {
-        self.total_bytes
-    }
-
     pub(crate) fn resource_entries(&self) -> Vec<CwtResourceEntry> {
-        let mut entries = Vec::with_capacity(self.source_count + 2);
-        entries.push(CwtResourceEntry {
-            uri: CWT_CATALOG_URI.to_string(),
-            name: "hoi4_cwt_catalog".to_string(),
-            title: "HOI4 CWT resource catalog".to_string(),
-            description: "Structured index of bundled virtual HOI4 CWT config sources.".to_string(),
-            mime_type: "application/toml",
-            size: self.catalog_index.len(),
-        });
-        entries.push(CwtResourceEntry {
-            uri: CWT_METADATA_URI.to_string(),
-            name: "hoi4_cwt_metadata".to_string(),
-            title: "HOI4 CWT snapshot metadata".to_string(),
-            description: "Traceability and runtime storage policy for bundled HOI4 CWT config."
-                .to_string(),
-            mime_type: "text/markdown",
-            size: self.metadata.len(),
-        });
-
-        entries.extend(embedded_hoi4_cwt_sources().map(|source| CwtResourceEntry {
-            uri: source.resource_uri(),
-            name: source.resource_name(),
-            title: format!("HOI4 CWT {}", source.path),
-            description: "Bundled virtual source from NS9927/cwtools-hoi4-config.".to_string(),
-            mime_type: source.mime_type,
-            size: source.content.len(),
-        }));
-
-        entries
+        vec![
+            CwtResourceEntry {
+                uri: CWT_CATALOG_URI.to_string(),
+                name: "hoi4_cwt_catalog".to_string(),
+                title: "HOI4 CWT resource catalog".to_string(),
+                description: "Pinned build-time GitHub source for in-memory HOI4 CWT rules."
+                    .to_string(),
+                mime_type: "application/toml",
+                size: self.catalog_index.len(),
+            },
+            CwtResourceEntry {
+                uri: CWT_METADATA_URI.to_string(),
+                name: "hoi4_cwt_metadata".to_string(),
+                title: "HOI4 CWT source metadata".to_string(),
+                description: "Traceability and runtime no-disk policy for HOI4 CWT config."
+                    .to_string(),
+                mime_type: "text/markdown",
+                size: self.metadata.len(),
+            },
+        ]
     }
 
     pub(crate) fn read_text(&self, uri: &str) -> Option<CwtResourceText> {
@@ -136,159 +95,108 @@ impl CwtResourceCatalog {
                 text: self.metadata.clone(),
                 mime_type: "text/markdown",
             }),
-            _ => {
-                let source_path = uri.strip_prefix(CWT_SOURCE_URI_PREFIX)?;
-                embedded_hoi4_cwt_sources()
-                    .find(|source| source.path == source_path)
-                    .map(|source| CwtResourceText {
-                        text: source.content.to_string(),
-                        mime_type: source.mime_type,
-                    })
-            }
+            _ => None,
         }
     }
-}
-
-impl Hoi4CwtSource {
-    pub fn virtual_path(&self) -> String {
-        format!("{}{}", VIRTUAL_SOURCE_PREFIX, self.path)
-    }
-
-    pub fn resource_uri(&self) -> String {
-        format!("{}{}", CWT_SOURCE_URI_PREFIX, self.path)
-    }
-
-    pub fn is_rule_source(&self) -> bool {
-        self.path.ends_with(".cwt")
-    }
-
-    fn resource_name(&self) -> String {
-        let mut name = String::from("hoi4_cwt_");
-        for character in self.path.chars() {
-            if character.is_ascii_alphanumeric() {
-                name.push(character.to_ascii_lowercase());
-            } else {
-                name.push('_');
-            }
-        }
-        name
-    }
-}
-
-pub fn embedded_hoi4_cwt_sources() -> impl Iterator<Item = Hoi4CwtSource> {
-    cwt_bundle::EMBEDDED_CWT_CONFIG_SOURCES
-        .iter()
-        .map(|source| Hoi4CwtSource {
-            path: source.path,
-            content: source.content,
-            mime_type: source.mime_type,
-        })
 }
 
 pub(crate) fn is_cwt_resource_uri(uri: &str) -> bool {
-    uri == CWT_CATALOG_URI || uri == CWT_METADATA_URI || uri.starts_with(CWT_SOURCE_URI_PREFIX)
+    uri == CWT_CATALOG_URI || uri == CWT_METADATA_URI
 }
 
-fn catalog_index_toml(source_count: usize, rule_source_count: usize, total_bytes: usize) -> String {
+fn catalog_index_toml() -> String {
     let mut output = String::new();
+    let archive_url = hoi4_cwt_config_archive_url();
 
     writeln!(
         &mut output,
         "source_format = {}",
-        toml_string(CWT_RESOURCE_SOURCE_FORMAT)
+        toml_string(HOI4_CWT_CONFIG.source_format)
     )
     .expect("writing to String cannot fail");
     writeln!(
         &mut output,
         "runtime_storage = {}",
-        toml_string(CWT_RUNTIME_STORAGE)
+        toml_string(HOI4_CWT_CONFIG.runtime_storage)
     )
     .expect("writing to String cannot fail");
     writeln!(
         &mut output,
         "upstream_url = {}",
-        toml_string(cwt_bundle::HOI4_CWT_CONFIG_UPSTREAM_URL)
+        toml_string(HOI4_CWT_CONFIG.upstream_url)
     )
     .expect("writing to String cannot fail");
+    writeln!(&mut output, "archive_url = {}", toml_string(&archive_url))
+        .expect("writing to String cannot fail");
     writeln!(
         &mut output,
         "revision = {}",
-        toml_string(cwt_bundle::HOI4_CWT_CONFIG_REVISION)
+        toml_string(HOI4_CWT_CONFIG.revision)
     )
     .expect("writing to String cannot fail");
     writeln!(
         &mut output,
         "license = {}",
-        toml_string(cwt_bundle::HOI4_CWT_CONFIG_LICENSE)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "snapshot_date = {}",
-        toml_string(cwt_bundle::HOI4_CWT_CONFIG_SNAPSHOT_DATE)
+        toml_string(HOI4_CWT_CONFIG.license)
     )
     .expect("writing to String cannot fail");
     writeln!(
         &mut output,
         "content_sha256 = {}",
-        toml_string(cwt_bundle::HOI4_CWT_CONFIG_CONTENT_SHA256)
+        toml_string(HOI4_CWT_CONFIG_CONTENT_SHA256)
     )
     .expect("writing to String cannot fail");
-    writeln!(&mut output, "source_count = {source_count}").expect("writing to String cannot fail");
-    writeln!(&mut output, "rule_source_count = {rule_source_count}")
+    writeln!(
+        &mut output,
+        "rule_source_count = {}",
+        HOI4_CWT_CONFIG_SOURCE_COUNT
+    )
+    .expect("writing to String cannot fail");
+    writeln!(
+        &mut output,
+        "rule_source_bytes = {}",
+        HOI4_CWT_CONFIG_TOTAL_BYTES
+    )
+    .expect("writing to String cannot fail");
+    writeln!(
+        &mut output,
+        "virtual_source_prefix = {}",
+        toml_string(HOI4_CWT_CONFIG.virtual_source_prefix)
+    )
+    .expect("writing to String cannot fail");
+    writeln!(&mut output, "embedded_rule_files_in_repo = false")
         .expect("writing to String cannot fail");
-    writeln!(&mut output, "total_bytes = {total_bytes}\n").expect("writing to String cannot fail");
-
-    for source in embedded_hoi4_cwt_sources() {
-        writeln!(&mut output, "[[sources]]").expect("writing to String cannot fail");
-        writeln!(&mut output, "path = {}", toml_string(source.path))
-            .expect("writing to String cannot fail");
-        writeln!(
-            &mut output,
-            "virtual_path = {}",
-            toml_string(&source.virtual_path())
-        )
+    writeln!(&mut output, "embedded_archive_bytes_in_binary = true")
         .expect("writing to String cannot fail");
-        writeln!(
-            &mut output,
-            "resource_uri = {}",
-            toml_string(&source.resource_uri())
-        )
-        .expect("writing to String cannot fail");
-        writeln!(&mut output, "mime_type = {}", toml_string(source.mime_type))
-            .expect("writing to String cannot fail");
-        writeln!(&mut output, "byte_len = {}", source.content.len())
-            .expect("writing to String cannot fail");
-        writeln!(&mut output, "rule_source = {}\n", source.is_rule_source())
-            .expect("writing to String cannot fail");
-    }
+    writeln!(&mut output, "runtime_disk_entities = false").expect("writing to String cannot fail");
 
     output
 }
 
-fn metadata_markdown(source_count: usize, rule_source_count: usize, total_bytes: usize) -> String {
+fn metadata_markdown() -> String {
     format!(
-        "# HOI4 CWT config snapshot\n\n\
+        "# HOI4 CWT config source\n\n\
          - Upstream: {}\n\
          - Revision: `{}`\n\
+         - Archive: {}\n\
          - License: {}\n\
-         - Snapshot date: {}\n\
-         - Content SHA-256: `{}`\n\
-         - Sources: {}\n\
          - Rule sources: {}\n\
-         - Embedded bytes: {}\n\
-         - Runtime storage: compiled static strings in process memory.\n\n\
-         Virtual paths use `{}`. RHoiScribe does not extract, copy, cache, lock, \
-         or rewrite these CWT sources on disk at runtime.\n",
-        cwt_bundle::HOI4_CWT_CONFIG_UPSTREAM_URL,
-        cwt_bundle::HOI4_CWT_CONFIG_REVISION,
-        cwt_bundle::HOI4_CWT_CONFIG_LICENSE,
-        cwt_bundle::HOI4_CWT_CONFIG_SNAPSHOT_DATE,
-        cwt_bundle::HOI4_CWT_CONFIG_CONTENT_SHA256,
-        source_count,
-        rule_source_count,
-        total_bytes,
-        VIRTUAL_SOURCE_PREFIX,
+         - Rule source bytes: {}\n\
+         - Content SHA-256: `{}`\n\
+         - Runtime storage: {}\n\
+         - Embedded RHoiScribe rule files: none\n\n\
+         RHoiScribe embeds the pinned GitHub archive into the compiled binary at build time, \
+         decompresses `.cwt` files from static bytes in memory, and reports virtual paths under `{}`. \
+         It does not extract, copy, cache, lock, or rewrite these rules on disk.\n",
+        HOI4_CWT_CONFIG.upstream_url,
+        HOI4_CWT_CONFIG.revision,
+        hoi4_cwt_config_archive_url(),
+        HOI4_CWT_CONFIG.license,
+        HOI4_CWT_CONFIG_SOURCE_COUNT,
+        HOI4_CWT_CONFIG_TOTAL_BYTES,
+        HOI4_CWT_CONFIG_CONTENT_SHA256,
+        HOI4_CWT_CONFIG.runtime_storage,
+        HOI4_CWT_CONFIG.virtual_source_prefix,
     )
 }
 

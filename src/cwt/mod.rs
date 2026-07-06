@@ -19,6 +19,7 @@
 // https://github.com/czxieddan/RHoiScribe
 //------------------------------------------------------------------------------------
 
+pub(crate) mod hoi4_config;
 pub mod rules;
 pub mod runtime;
 pub mod service;

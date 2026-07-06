@@ -24,13 +24,9 @@ use std::{error::Error, fmt};
 use rmcp::model::{Annotated, RawResource, ReadResourceResult, Resource, ResourceContents};
 
 mod cwt;
-mod cwt_bundle;
 mod knowledge;
 
-pub use cwt::{
-    CWT_CATALOG_URI, CWT_METADATA_URI, CWT_SOURCE_URI_PREFIX, CwtResourceCatalog, Hoi4CwtSource,
-    embedded_hoi4_cwt_sources,
-};
+pub use cwt::{CWT_CATALOG_URI, CWT_METADATA_URI, CwtResourceCatalog};
 pub use knowledge::{KnowledgeCatalog, KnowledgeLoadError, KnowledgeTopic};
 
 pub const MODULE_PURPOSE: &str = "versioned HOI4 knowledge resources";

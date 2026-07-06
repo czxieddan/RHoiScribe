@@ -22,6 +22,7 @@
 use std::{
     error::Error,
     fmt, fs,
+    io::{Cursor, Read},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -36,6 +37,22 @@ use cwtools_rules::{
 };
 use cwtools_string_table::string_table::StringTable;
 use cwtools_validation::{ValidationError, validate_ast};
+
+use super::hoi4_config::HOI4_CWT_CONFIG;
+
+mod embedded_hoi4_cwt_config {
+    include!(concat!(env!("OUT_DIR"), "/hoi4_cwt_config.rs"));
+}
+
+pub const HOI4_CWT_CONFIG_UPSTREAM_URL: &str = HOI4_CWT_CONFIG.upstream_url;
+pub const HOI4_CWT_CONFIG_REVISION: &str = HOI4_CWT_CONFIG.revision;
+pub const HOI4_CWT_CONFIG_LICENSE: &str = HOI4_CWT_CONFIG.license;
+pub const HOI4_CWT_CONFIG_CONTENT_SHA256: &str =
+    embedded_hoi4_cwt_config::HOI4_CWT_CONFIG_CONTENT_SHA256;
+pub const HOI4_CWT_CONFIG_SOURCE_COUNT: usize =
+    embedded_hoi4_cwt_config::HOI4_CWT_CONFIG_SOURCE_COUNT;
+pub const HOI4_CWT_CONFIG_TOTAL_BYTES: usize =
+    embedded_hoi4_cwt_config::HOI4_CWT_CONFIG_TOTAL_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VirtualCwtSource<'a> {
@@ -74,6 +91,9 @@ pub enum CwtRuleLoadError {
     },
     ExternalRead {
         path: String,
+        message: String,
+    },
+    EmbeddedArchive {
         message: String,
     },
     ScriptParse {
@@ -124,31 +144,17 @@ impl OwnedCwtSource {
     }
 }
 
-pub fn load_bundled_cwt_rules() -> Result<LoadedCwtRules, CwtRuleLoadError> {
-    let bundled_sources = crate::resources::embedded_hoi4_cwt_sources()
-        .filter(|source| source.is_rule_source())
-        .collect::<Vec<_>>();
+pub fn hoi4_cwt_config_archive_url() -> String {
+    HOI4_CWT_CONFIG.archive_url()
+}
 
-    if bundled_sources.is_empty() {
-        return Err(CwtRuleLoadError::NoRuleSources {
-            source: "embedded HOI4 CWT bundle".to_string(),
-        });
-    }
+pub fn read_embedded_hoi4_cwt_sources() -> Result<Vec<OwnedCwtSource>, CwtRuleLoadError> {
+    read_cwt_sources_from_embedded_archive()
+}
 
-    let virtual_paths = bundled_sources
-        .iter()
-        .map(|source| source.virtual_path())
-        .collect::<Vec<_>>();
-    let sources = bundled_sources
-        .iter()
-        .zip(&virtual_paths)
-        .map(|(source, path)| VirtualCwtSource {
-            path,
-            content: source.content,
-        })
-        .collect::<Vec<_>>();
-
-    load_virtual_cwt_rules(&sources)
+pub fn load_embedded_hoi4_cwt_rules() -> Result<LoadedCwtRules, CwtRuleLoadError> {
+    let sources = read_embedded_hoi4_cwt_sources()?;
+    load_owned_cwt_rules(&sources)
 }
 
 pub fn load_owned_cwt_rules(
@@ -296,8 +302,8 @@ impl ReloadableCwtRules {
         self.last_failure.as_ref()
     }
 
-    pub fn reload_bundled(&mut self) -> CwtRuleReloadReport {
-        self.apply_reload_result(load_bundled_cwt_rules())
+    pub fn reload_embedded_hoi4_config(&mut self) -> CwtRuleReloadReport {
+        self.apply_reload_result(load_embedded_hoi4_cwt_rules())
     }
 
     pub fn reload_virtual(&mut self, sources: &[VirtualCwtSource<'_>]) -> CwtRuleReloadReport {
@@ -370,6 +376,13 @@ impl fmt::Display for CwtRuleLoadError {
                     path, message
                 )
             }
+            CwtRuleLoadError::EmbeddedArchive { message } => {
+                write!(
+                    formatter,
+                    "failed to read embedded CWT rules archive in memory: {}",
+                    message
+                )
+            }
             CwtRuleLoadError::ScriptParse {
                 path,
                 line,
@@ -385,6 +398,62 @@ impl fmt::Display for CwtRuleLoadError {
 }
 
 impl Error for CwtRuleLoadError {}
+
+fn read_cwt_sources_from_embedded_archive() -> Result<Vec<OwnedCwtSource>, CwtRuleLoadError> {
+    let cursor = Cursor::new(embedded_hoi4_cwt_config::HOI4_CWT_CONFIG_ARCHIVE_BYTES);
+    let mut archive =
+        zip::ZipArchive::new(cursor).map_err(|error| CwtRuleLoadError::EmbeddedArchive {
+            message: error.to_string(),
+        })?;
+    let mut sources = Vec::new();
+
+    for index in 0..archive.len() {
+        let mut file =
+            archive
+                .by_index(index)
+                .map_err(|error| CwtRuleLoadError::EmbeddedArchive {
+                    message: error.to_string(),
+                })?;
+        if !file.is_file() {
+            continue;
+        }
+
+        let entry_name = file.name().replace('\\', "/");
+        let Some(relative_path) = github_archive_config_path(&entry_name) else {
+            continue;
+        };
+        if !relative_path.ends_with(".cwt") {
+            continue;
+        }
+
+        let mut content = String::new();
+        file.read_to_string(&mut content)
+            .map_err(|error| CwtRuleLoadError::EmbeddedArchive {
+                message: format!("{}: {}", entry_name, error),
+            })?;
+
+        sources.push(OwnedCwtSource {
+            path: HOI4_CWT_CONFIG.virtual_path(relative_path),
+            content,
+        });
+    }
+
+    sources.sort_by(|left, right| left.path.cmp(&right.path));
+    if sources.is_empty() {
+        return Err(CwtRuleLoadError::NoRuleSources {
+            source: hoi4_cwt_config_archive_url().to_string(),
+        });
+    }
+
+    Ok(sources)
+}
+
+fn github_archive_config_path(path: &str) -> Option<&str> {
+    path.strip_prefix("config/").or_else(|| {
+        path.split_once("/config/")
+            .map(|(_, relative_path)| relative_path)
+    })
+}
 
 fn collect_external_cwt_files(
     directory: &Path,
