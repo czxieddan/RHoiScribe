@@ -70,48 +70,70 @@ pub fn execute_skill_command_with_runtime(
     runtime: Arc<RhoiScribeRuntime>,
 ) -> Result<String, SkillError> {
     match command {
-        SkillCommand::ListTools => serialize(json!({
-            "tools": ToolCatalog::builtin().to_mcp_tools()
-        })),
-        SkillCommand::ListResources => {
-            let catalog = ResourceCatalog::load_embedded()
-                .map_err(|error| SkillError::Resource(error.to_string()))?;
-            serialize(json!({
-                "resources": catalog.to_mcp_resources()
-            }))
-        }
-        SkillCommand::ListPrompts => serialize(json!({
-            "prompts": PromptCatalog::builtin().to_mcp_prompts()
-        })),
-        SkillCommand::ReadResource { uri } => {
-            let catalog = ResourceCatalog::load_embedded()
-                .map_err(|error| SkillError::Resource(error.to_string()))?;
-            let result = catalog
-                .read_mcp_resource(&uri)
-                .map_err(|error| SkillError::Resource(error.to_string()))?;
-            serialize(result)
-        }
+        SkillCommand::ListTools => list_tools_json(),
+        SkillCommand::ListResources => list_resources_json(),
+        SkillCommand::ListPrompts => list_prompts_json(),
+        SkillCommand::ReadResource { uri } => read_resource_json(&uri),
         SkillCommand::GetPrompt {
             name,
             arguments_json,
-        } => {
-            let arguments = parse_object("get-prompt", &arguments_json)?;
-            let result = PromptCatalog::builtin()
-                .render(&name, &arguments)
-                .map_err(|error| SkillError::Prompt(error.to_string()))?;
-            serialize(result)
-        }
+        } => get_prompt_json(&name, &arguments_json),
         SkillCommand::CallTool {
             name,
             arguments_json,
-        } => {
-            let arguments = parse_object("call-tool", &arguments_json)?;
-            let result = ToolCatalog::builtin()
-                .call_with_runtime(runtime, &name, arguments)
-                .map_err(|error| SkillError::Tool(error.to_string()))?;
-            serialize(result)
-        }
+        } => call_tool_json(runtime, &name, &arguments_json),
     }
+}
+
+fn list_tools_json() -> Result<String, SkillError> {
+    serialize(json!({
+        "tools": ToolCatalog::builtin().to_mcp_tools()
+    }))
+}
+
+fn list_resources_json() -> Result<String, SkillError> {
+    let catalog = embedded_resource_catalog()?;
+    serialize(json!({
+        "resources": catalog.to_mcp_resources()
+    }))
+}
+
+fn list_prompts_json() -> Result<String, SkillError> {
+    serialize(json!({
+        "prompts": PromptCatalog::builtin().to_mcp_prompts()
+    }))
+}
+
+fn read_resource_json(uri: &str) -> Result<String, SkillError> {
+    let catalog = embedded_resource_catalog()?;
+    let result = catalog
+        .read_mcp_resource(uri)
+        .map_err(|error| SkillError::Resource(error.to_string()))?;
+    serialize(result)
+}
+
+fn get_prompt_json(name: &str, arguments_json: &str) -> Result<String, SkillError> {
+    let arguments = parse_object("get-prompt", arguments_json)?;
+    let result = PromptCatalog::builtin()
+        .render(name, &arguments)
+        .map_err(|error| SkillError::Prompt(error.to_string()))?;
+    serialize(result)
+}
+
+fn call_tool_json(
+    runtime: Arc<RhoiScribeRuntime>,
+    name: &str,
+    arguments_json: &str,
+) -> Result<String, SkillError> {
+    let arguments = parse_object("call-tool", arguments_json)?;
+    let result = ToolCatalog::builtin()
+        .call_with_runtime(runtime, name, arguments)
+        .map_err(|error| SkillError::Tool(error.to_string()))?;
+    serialize(result)
+}
+
+fn embedded_resource_catalog() -> Result<ResourceCatalog, SkillError> {
+    ResourceCatalog::load_embedded().map_err(|error| SkillError::Resource(error.to_string()))
 }
 
 impl fmt::Display for SkillError {

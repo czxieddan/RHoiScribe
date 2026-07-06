@@ -19,24 +19,22 @@
 // https://github.com/czxieddan/RHoiScribe
 //------------------------------------------------------------------------------------
 
-use std::{
-    collections::BTreeSet,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::BTreeSet, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
     RhoiScribeRuntime,
-    cwt::rules::{
-        HOI4_CWT_CONFIG_CONTENT_SHA256, HOI4_CWT_CONFIG_REVISION, read_embedded_hoi4_cwt_sources,
-    },
+    cwt::rules::{HOI4_CWT_CONFIG_CONTENT_SHA256, HOI4_CWT_CONFIG_REVISION},
 };
 
 use super::{
     ProjectIndexItem, ScanRoot, ToolError,
-    project_index::{self, ProjectIndexRequest, ProjectIndexResult},
+    cwt_indexing::{CwtIndexQuery, index_project},
+    cwt_profiles::{
+        diagnostic_explanation, embedded_source_path, normalized_code, rule_profile_for_path,
+        string_vec,
+    },
 };
 
 const CWT_INTELLIGENCE_TOOL_NAMES: &[&str] = &[
@@ -92,20 +90,6 @@ pub struct FindHoi4ReferencesRequest {
     pub include_game_roots: Option<bool>,
     pub identifier: String,
     pub kind: Option<String>,
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SuggestHoi4CompletionRequest {
-    pub handle_id: Option<String>,
-    pub workspace_root: Option<String>,
-    #[serde(default)]
-    pub roots: Vec<ScanRoot>,
-    pub include_game_roots: Option<bool>,
-    pub path: String,
-    pub line: Option<usize>,
-    pub column: Option<usize>,
-    pub prefix: Option<String>,
     pub limit: Option<usize>,
 }
 
@@ -175,19 +159,6 @@ pub struct FindHoi4ReferencesResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SuggestHoi4CompletionResult {
-    pub path: String,
-    pub line: Option<usize>,
-    pub column: Option<usize>,
-    pub suggestions: Vec<Hoi4CompletionSuggestion>,
-    pub scope_context: String,
-    pub rule_name: String,
-    pub source: String,
-    pub rule_source_revision: String,
-    pub runtime_disk_entities: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InspectHoi4ScopeResult {
     pub path: String,
     pub node_path: Vec<String>,
@@ -233,52 +204,6 @@ pub struct Hoi4LanguageSymbol {
     pub confidence: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Hoi4CompletionSuggestion {
-    pub label: String,
-    pub insert_text: String,
-    pub kind: String,
-    pub detail: String,
-    pub source: String,
-    pub confidence: String,
-}
-
-struct IndexQuery<'a> {
-    handle_id: Option<&'a str>,
-    workspace_root: Option<&'a str>,
-    roots: &'a [ScanRoot],
-    include_game_roots: Option<bool>,
-}
-
-#[derive(Debug, Clone)]
-struct RuleProfile {
-    rule_name: &'static str,
-    type_name: &'static str,
-    path_kind: &'static str,
-    scope_context: &'static str,
-    source_hint: &'static str,
-    allowed_effects: Vec<&'static str>,
-    allowed_triggers: Vec<&'static str>,
-    completions: Vec<CompletionProfile>,
-    confidence: &'static str,
-}
-
-#[derive(Debug, Clone)]
-struct CompletionProfile {
-    label: &'static str,
-    kind: &'static str,
-    detail: &'static str,
-}
-
-struct CompletionCandidate<'a> {
-    label: &'a str,
-    insert_text: &'a str,
-    kind: &'a str,
-    detail: &'a str,
-    source: &'a str,
-    confidence: &'a str,
-}
-
 pub fn is_cwt_intelligence_tool(name: &str) -> bool {
     CWT_INTELLIGENCE_TOOL_NAMES.contains(&name)
 }
@@ -321,11 +246,12 @@ pub fn list_workspace_symbols(
     let query = request.query.as_deref().map(str::to_ascii_lowercase);
     let index = index_project(
         &runtime,
-        IndexQuery {
+        CwtIndexQuery {
             handle_id: request.handle_id.as_deref(),
             workspace_root: request.workspace_root.as_deref(),
             roots: &request.roots,
             include_game_roots: request.include_game_roots,
+            missing_roots_message: "handle_id, workspace_root, or roots is required for workspace language queries",
         },
     )?;
     let indexed_file_count = index.files.len();
@@ -360,11 +286,12 @@ pub fn find_definition(
     let limit = bounded_limit(request.limit, 100);
     let index = index_project(
         &runtime,
-        IndexQuery {
+        CwtIndexQuery {
             handle_id: request.handle_id.as_deref(),
             workspace_root: request.workspace_root.as_deref(),
             roots: &request.roots,
             include_game_roots: request.include_game_roots,
+            missing_roots_message: "handle_id, workspace_root, or roots is required for workspace language queries",
         },
     )?;
     let definitions = matching_items(
@@ -395,11 +322,12 @@ pub fn find_references(
     let limit = bounded_limit(request.limit, 100);
     let index = index_project(
         &runtime,
-        IndexQuery {
+        CwtIndexQuery {
             handle_id: request.handle_id.as_deref(),
             workspace_root: request.workspace_root.as_deref(),
             roots: &request.roots,
             include_game_roots: request.include_game_roots,
+            missing_roots_message: "handle_id, workspace_root, or roots is required for workspace language queries",
         },
     )?;
     let references = matching_items(
@@ -423,81 +351,6 @@ pub fn find_references(
     })
 }
 
-pub fn suggest_completion(
-    runtime: Arc<RhoiScribeRuntime>,
-    request: SuggestHoi4CompletionRequest,
-) -> Result<SuggestHoi4CompletionResult, ToolError> {
-    let limit = bounded_limit(request.limit, 100);
-    let prefix = request.prefix.as_deref().unwrap_or_default();
-    let profile = rule_profile_for_path(&request.path);
-    let mut seen = BTreeSet::new();
-    let mut suggestions = Vec::new();
-
-    for completion in profile.completions.iter() {
-        push_completion_if_matches(
-            &mut suggestions,
-            &mut seen,
-            CompletionCandidate {
-                label: completion.label,
-                insert_text: completion.label,
-                kind: completion.kind,
-                detail: completion.detail,
-                source: "embedded_cwt_rule_profile",
-                confidence: profile.confidence,
-            },
-            prefix,
-        );
-    }
-
-    if suggestions.len() < limit
-        && (request.handle_id.is_some()
-            || request.workspace_root.is_some()
-            || !request.roots.is_empty())
-        && let Ok(index) = index_project(
-            &runtime,
-            IndexQuery {
-                handle_id: request.handle_id.as_deref(),
-                workspace_root: request.workspace_root.as_deref(),
-                roots: &request.roots,
-                include_game_roots: request.include_game_roots,
-            },
-        )
-    {
-        for item in index.definitions.iter() {
-            push_completion_if_matches(
-                &mut suggestions,
-                &mut seen,
-                CompletionCandidate {
-                    label: &item.name,
-                    insert_text: &item.name,
-                    kind: &item.kind,
-                    detail: &format!("workspace {}", item.context),
-                    source: "rhoiscribe_project_index",
-                    confidence: "medium",
-                },
-                prefix,
-            );
-            if suggestions.len() >= limit {
-                break;
-            }
-        }
-    }
-
-    suggestions.truncate(limit);
-
-    Ok(SuggestHoi4CompletionResult {
-        path: normalize_path(&request.path),
-        line: request.line,
-        column: request.column,
-        suggestions,
-        scope_context: profile.scope_context.to_string(),
-        rule_name: profile.rule_name.to_string(),
-        source: "embedded_cwt_rule_profile_with_workspace_symbols".to_string(),
-        rule_source_revision: HOI4_CWT_CONFIG_REVISION.to_string(),
-        runtime_disk_entities: false,
-    })
-}
-
 pub fn inspect_scope(
     _runtime: Arc<RhoiScribeRuntime>,
     request: InspectHoi4ScopeRequest,
@@ -507,8 +360,8 @@ pub fn inspect_scope(
         path: normalize_path(&request.path),
         node_path: request.node_path,
         scope_context: profile.scope_context.to_string(),
-        allowed_effects: strings(profile.allowed_effects),
-        allowed_triggers: strings(profile.allowed_triggers),
+        allowed_effects: string_vec(&profile.allowed_effects),
+        allowed_triggers: string_vec(&profile.allowed_triggers),
         rule_source_path: embedded_source_path(profile.source_hint),
         rule_source_revision: HOI4_CWT_CONFIG_REVISION.to_string(),
         source: "embedded_cwt_rule_profile".to_string(),
@@ -543,72 +396,6 @@ pub fn inspect_type_rule(
     })
 }
 
-fn index_project(
-    runtime: &Arc<RhoiScribeRuntime>,
-    query: IndexQuery<'_>,
-) -> Result<ProjectIndexResult, ToolError> {
-    let roots = resolve_scan_roots(runtime, &query)?;
-    project_index::index_hoi4_project(ProjectIndexRequest {
-        roots,
-        include_game_roots: query.include_game_roots,
-    })
-    .map_err(ToolError::InvalidRequest)
-}
-
-fn resolve_scan_roots(
-    runtime: &Arc<RhoiScribeRuntime>,
-    query: &IndexQuery<'_>,
-) -> Result<Vec<ScanRoot>, ToolError> {
-    if !query.roots.is_empty() {
-        return Ok(query.roots.to_vec());
-    }
-    if let Some(workspace_root) = query.workspace_root {
-        return Ok(vec![ScanRoot {
-            path: workspace_root.to_string(),
-            role: Some("mod".to_string()),
-        }]);
-    }
-    if let Some(handle_id) = query.handle_id {
-        let workspace_root = workspace_root_from_handle(runtime, handle_id)?;
-        return Ok(vec![ScanRoot {
-            path: path_to_string(&workspace_root),
-            role: Some("mod".to_string()),
-        }]);
-    }
-
-    Err(ToolError::InvalidRequest(
-        "handle_id, workspace_root, or roots is required for workspace language queries"
-            .to_string(),
-    ))
-}
-
-fn workspace_root_from_handle(
-    runtime: &Arc<RhoiScribeRuntime>,
-    handle_id: &str,
-) -> Result<PathBuf, ToolError> {
-    let handle = runtime
-        .cwt_language()
-        .get_workspace(handle_id)
-        .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-        .ok_or_else(|| ToolError::InvalidRequest(format!("unknown CWT workspace `{handle_id}`")))?;
-
-    if handle
-        .snapshot()
-        .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-        .is_none()
-    {
-        handle
-            .refresh_blocking()
-            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?;
-    }
-
-    handle
-        .snapshot()
-        .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-        .map(|snapshot| snapshot.workspace_root.clone())
-        .ok_or_else(|| ToolError::InvalidRequest("CWT workspace has no warm snapshot".to_string()))
-}
-
 fn matching_items<'a>(
     items: &'a [ProjectIndexItem],
     identifier: &str,
@@ -638,307 +425,10 @@ fn language_symbol_from_index_item(item: &ProjectIndexItem) -> Hoi4LanguageSymbo
     }
 }
 
-fn push_completion_if_matches(
-    suggestions: &mut Vec<Hoi4CompletionSuggestion>,
-    seen: &mut BTreeSet<String>,
-    candidate: CompletionCandidate<'_>,
-    prefix: &str,
-) {
-    if !prefix.is_empty()
-        && !candidate
-            .label
-            .to_ascii_lowercase()
-            .starts_with(&prefix.to_ascii_lowercase())
-    {
-        return;
-    }
-    if !seen.insert(candidate.label.to_string()) {
-        return;
-    }
-
-    suggestions.push(Hoi4CompletionSuggestion {
-        label: candidate.label.to_string(),
-        insert_text: candidate.insert_text.to_string(),
-        kind: candidate.kind.to_string(),
-        detail: candidate.detail.to_string(),
-        source: candidate.source.to_string(),
-        confidence: candidate.confidence.to_string(),
-    });
-}
-
-fn rule_profile_for_path(path: &str) -> RuleProfile {
-    let normalized = normalize_path(path);
-    if normalized.starts_with("events/") {
-        return RuleProfile {
-            rule_name: "events",
-            type_name: "event",
-            path_kind: "event script",
-            scope_context: "country/event scope",
-            source_hint: "events.cwt",
-            allowed_effects: vec![
-                "add_political_power",
-                "country_event",
-                "news_event",
-                "set_country_flag",
-            ],
-            allowed_triggers: vec!["has_country_flag", "tag", "exists"],
-            completions: completion_profiles(&[
-                ("add_namespace", "keyword", "event namespace declaration"),
-                ("country_event", "block", "country event definition"),
-                ("news_event", "block", "news event definition"),
-                ("state_event", "block", "state event definition"),
-                ("unit_event", "block", "unit event definition"),
-                ("id", "property", "event id"),
-                ("title", "property", "event title localisation key"),
-                ("desc", "property", "event description localisation key"),
-                ("picture", "property", "event picture"),
-                ("is_triggered_only", "property", "event trigger mode"),
-                ("trigger", "block", "event trigger block"),
-                ("immediate", "block", "event immediate effect block"),
-                ("option", "block", "event option block"),
-                ("name", "property", "option localisation key"),
-                ("ai_chance", "block", "option AI chance block"),
-            ]),
-            confidence: "medium",
-        };
-    }
-    if normalized.starts_with("common/national_focus/") {
-        return RuleProfile {
-            rule_name: "national_focus",
-            type_name: "focus_tree",
-            path_kind: "national focus script",
-            scope_context: "country/focus scope",
-            source_hint: "national_focus.cwt",
-            allowed_effects: vec!["add_political_power", "add_stability", "add_war_support"],
-            allowed_triggers: vec!["has_completed_focus", "has_country_flag", "tag"],
-            completions: completion_profiles(&[
-                ("focus_tree", "block", "focus tree definition"),
-                ("focus", "block", "focus definition"),
-                ("id", "property", "focus id"),
-                ("icon", "property", "focus icon sprite"),
-                ("x", "property", "focus x position"),
-                ("y", "property", "focus y position"),
-                ("cost", "property", "focus cost"),
-                ("prerequisite", "block", "focus prerequisite"),
-                ("mutually_exclusive", "block", "mutually exclusive focus"),
-                ("available", "block", "focus availability trigger"),
-                ("completion_reward", "block", "focus reward effect"),
-                ("ai_will_do", "block", "AI weighting"),
-            ]),
-            confidence: "medium",
-        };
-    }
-    if normalized.starts_with("common/scripted_effects/") {
-        return RuleProfile {
-            rule_name: "scripted_effects",
-            type_name: "scripted_effect",
-            path_kind: "scripted effect script",
-            scope_context: "effect scope",
-            source_hint: "effects.cwt",
-            allowed_effects: vec!["add_political_power", "set_country_flag", "hidden_effect"],
-            allowed_triggers: vec!["has_country_flag", "always"],
-            completions: completion_profiles(&[
-                (
-                    "add_political_power",
-                    "effect",
-                    "country political power effect",
-                ),
-                ("set_country_flag", "effect", "set country flag effect"),
-                ("hidden_effect", "block", "hidden effect block"),
-                ("if", "block", "conditional effect"),
-                ("limit", "block", "condition block inside an effect"),
-            ]),
-            confidence: "medium",
-        };
-    }
-    if normalized.starts_with("common/on_actions/") {
-        return RuleProfile {
-            rule_name: "on_actions",
-            type_name: "on_action",
-            path_kind: "on_action script",
-            scope_context: "on_action effect scope",
-            source_hint: "on_actions.cwt",
-            allowed_effects: vec!["country_event", "news_event", "random_events"],
-            allowed_triggers: vec!["always", "has_country_flag"],
-            completions: completion_profiles(&[
-                ("on_startup", "block", "startup on_action"),
-                ("effect", "block", "effect payload"),
-                ("country_event", "block", "fire country event"),
-                ("news_event", "block", "fire news event"),
-                ("random_events", "block", "weighted event list"),
-            ]),
-            confidence: "medium",
-        };
-    }
-    if normalized.starts_with("localisation/") {
-        return RuleProfile {
-            rule_name: "localisation",
-            type_name: "localisation_key",
-            path_kind: "localisation",
-            scope_context: "localisation key/value table",
-            source_hint: "localisation.cwt",
-            allowed_effects: Vec::new(),
-            allowed_triggers: Vec::new(),
-            completions: completion_profiles(&[
-                (
-                    "l_english:",
-                    "keyword",
-                    "English localisation language header",
-                ),
-                (":0", "property", "localisation version suffix"),
-            ]),
-            confidence: "medium",
-        };
-    }
-    if normalized.starts_with("interface/") || normalized.starts_with("gfx/") {
-        return RuleProfile {
-            rule_name: "interface",
-            type_name: "gui_or_gfx",
-            path_kind: "interface asset",
-            scope_context: "GUI/GFX asset scope",
-            source_hint: "interface.cwt",
-            allowed_effects: Vec::new(),
-            allowed_triggers: Vec::new(),
-            completions: completion_profiles(&[
-                ("spriteType", "block", "sprite definition"),
-                ("name", "property", "GUI or sprite name"),
-                ("texturefile", "property", "sprite texture path"),
-                ("quadTextureSprite", "property", "GUI sprite reference"),
-            ]),
-            confidence: "medium",
-        };
-    }
-
-    RuleProfile {
-        rule_name: "generic_hoi4_script",
-        type_name: "script",
-        path_kind: "HOI4 script",
-        scope_context: "unknown or generic script scope",
-        source_hint: "settings.cwt",
-        allowed_effects: vec!["add_political_power", "set_country_flag"],
-        allowed_triggers: vec!["always", "has_country_flag"],
-        completions: completion_profiles(&[
-            ("if", "block", "conditional block"),
-            ("limit", "block", "condition block"),
-            (
-                "add_political_power",
-                "effect",
-                "country political power effect",
-            ),
-            ("set_country_flag", "effect", "set country flag effect"),
-        ]),
-        confidence: "low",
-    }
-}
-
-fn completion_profiles(
-    items: &[(&'static str, &'static str, &'static str)],
-) -> Vec<CompletionProfile> {
-    items
-        .iter()
-        .map(|(label, kind, detail)| CompletionProfile {
-            label,
-            kind,
-            detail,
-        })
-        .collect()
-}
-
-fn embedded_source_path(source_hint: &str) -> Option<String> {
-    read_embedded_hoi4_cwt_sources()
-        .ok()?
-        .into_iter()
-        .find(|source| source.path.ends_with(source_hint) || source.path.contains(source_hint))
-        .map(|source| source.path)
-}
-
-struct DiagnosticExplanation {
-    severity: &'static str,
-    meaning: &'static str,
-    repair_guidance: &'static str,
-    source: &'static str,
-    confidence: &'static str,
-}
-
-fn diagnostic_explanation(code: Option<&str>, message: Option<&str>) -> DiagnosticExplanation {
-    match code {
-        Some("CW263") => DiagnosticExplanation {
-            severity: "error",
-            meaning: "CWT schema validation found an unexpected field or key for the rule that applies at this path.",
-            repair_guidance: "Compare the field against the CWT type rule with inspect_hoi4_type_rule, move it to an allowed block, rename it to a valid HOI4 key, or remove it if it is not supported.",
-            source: "cwt_diagnostic_code",
-            confidence: "high",
-        },
-        Some("CW262") => DiagnosticExplanation {
-            severity: "error",
-            meaning: "CWT schema validation found a value shape or type that does not match the rule for this key.",
-            repair_guidance: "Inspect the type rule, then change the value to the expected scalar, enum, block, scope, or reference form.",
-            source: "cwt_diagnostic_code",
-            confidence: "high",
-        },
-        Some("CW242") => DiagnosticExplanation {
-            severity: "warning",
-            meaning: "CWT validation reported a missing or unresolved required reference or localisation-style value.",
-            repair_guidance: "Use find_hoi4_definition or list_hoi4_workspace_symbols to confirm the referenced identifier exists, then add the missing definition or correct the key.",
-            source: "cwt_diagnostic_code",
-            confidence: "medium",
-        },
-        Some("cwt_parse_error") => DiagnosticExplanation {
-            severity: "error",
-            meaning: "The Paradox script parser could not build an AST, so schema validation cannot run for this content.",
-            repair_guidance: "Fix unmatched braces, missing equals signs, malformed quoted strings, or other script syntax first, then rerun validate_hoi4_file.",
-            source: "rhoiscribe_cwt_mapping",
-            confidence: "high",
-        },
-        _ if message
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-            .contains("unexpected") =>
-        {
-            DiagnosticExplanation {
-                severity: "error",
-                meaning: "The diagnostic text indicates the key or value is outside the CWT rule for this context.",
-                repair_guidance: "Inspect the applicable type rule and scope, then adjust the key or move it under a valid parent block.",
-                source: "diagnostic_message_heuristic",
-                confidence: "medium",
-            }
-        }
-        _ => DiagnosticExplanation {
-            severity: "warning",
-            meaning: "The diagnostic came from CWT or RHoiScribe language analysis, but this code does not yet have a specialized explanation.",
-            repair_guidance: "Use validate_hoi4_file together with inspect_hoi4_type_rule and inspect_hoi4_scope to identify the expected structure.",
-            source: "generic_cwt_diagnostic_mapping",
-            confidence: "low",
-        },
-    }
-}
-
-fn normalized_code(code: Option<&str>, message: Option<&str>) -> Option<String> {
-    code.filter(|code| !code.trim().is_empty())
-        .map(str::to_string)
-        .or_else(|| {
-            let message = message?;
-            message
-                .split_whitespace()
-                .find(|part| {
-                    part.starts_with("CW") && part[2..].chars().all(|c| c.is_ascii_digit())
-                })
-                .map(str::to_string)
-        })
-}
-
 fn bounded_limit(limit: Option<usize>, default: usize) -> usize {
     limit.unwrap_or(default).clamp(1, default)
 }
 
-fn strings(values: Vec<&str>) -> Vec<String> {
-    values.into_iter().map(str::to_string).collect()
-}
-
 fn normalize_path(path: &str) -> String {
     path.replace('\\', "/")
-}
-
-fn path_to_string(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
 }

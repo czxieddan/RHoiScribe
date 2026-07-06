@@ -21,7 +21,7 @@
 
 use std::{
     error::Error,
-    fmt, fs,
+    fmt, fs, io,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -416,26 +416,45 @@ fn collect_external_cwt_files(
     })?;
 
     for entry in entries {
-        let entry = entry.map_err(|error| CwtRuleLoadError::ExternalRead {
-            path: path_to_string(directory),
-            message: error.to_string(),
-        })?;
-        let path = entry.path();
-        let file_type = entry
-            .file_type()
-            .map_err(|error| CwtRuleLoadError::ExternalRead {
-                path: path_to_string(&path),
-                message: error.to_string(),
-            })?;
-
-        if file_type.is_dir() {
-            collect_external_cwt_files(&path, files)?;
-        } else if file_type.is_file() && is_cwt_file(&path) {
-            files.push(path);
-        }
+        collect_external_cwt_entry(directory, entry, files)?;
     }
 
     Ok(())
+}
+
+fn collect_external_cwt_entry(
+    directory: &Path,
+    entry: Result<fs::DirEntry, io::Error>,
+    files: &mut Vec<PathBuf>,
+) -> Result<(), CwtRuleLoadError> {
+    let entry = entry.map_err(|error| CwtRuleLoadError::ExternalRead {
+        path: path_to_string(directory),
+        message: error.to_string(),
+    })?;
+    let path = entry.path();
+    let file_type = external_file_type(&path, &entry)?;
+
+    if file_type.is_dir() {
+        collect_external_cwt_files(&path, files)
+    } else {
+        push_external_cwt_file(path, file_type, files);
+        Ok(())
+    }
+}
+
+fn external_file_type(path: &Path, entry: &fs::DirEntry) -> Result<fs::FileType, CwtRuleLoadError> {
+    entry
+        .file_type()
+        .map_err(|error| CwtRuleLoadError::ExternalRead {
+            path: path_to_string(path),
+            message: error.to_string(),
+        })
+}
+
+fn push_external_cwt_file(path: PathBuf, file_type: fs::FileType, files: &mut Vec<PathBuf>) {
+    if file_type.is_file() && is_cwt_file(&path) {
+        files.push(path);
+    }
 }
 
 fn is_cwt_file(path: &Path) -> bool {

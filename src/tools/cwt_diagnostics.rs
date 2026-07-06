@@ -20,8 +20,6 @@
 //------------------------------------------------------------------------------------
 
 use std::{
-    collections::BTreeSet,
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -34,19 +32,16 @@ use crate::{
         rules::{
             CwtRuleLoadError, CwtValidationDiagnostic, HOI4_CWT_CONFIG_CONTENT_SHA256,
             HOI4_CWT_CONFIG_REVISION, HOI4_CWT_CONFIG_SOURCE_COUNT, HOI4_CWT_CONFIG_TOTAL_BYTES,
-            LoadedCwtRules, load_embedded_hoi4_cwt_rules,
+            LoadedCwtRules,
         },
         workspace::{
-            CwtRulesSource, CwtWorkspaceConfig, CwtWorkspaceMode, CwtWorkspaceSnapshot,
-            CwtWorkspaceStatus, CwtWorkspaceWarmState,
+            CwtRulesSource, CwtWorkspaceConfig, CwtWorkspaceMode, CwtWorkspaceStatus,
+            CwtWorkspaceWarmState,
         },
     },
 };
 
-use super::{
-    ProjectValidationCheck, ProjectValidationRequest, ProjectValidationResult, ScanRoot, ToolError,
-    project_validation,
-};
+use super::ToolError;
 
 const CWT_TOOL_NAMES: &[&str] = &[
     "open_hoi4_language_workspace",
@@ -72,22 +67,6 @@ pub struct GetHoi4LanguageStatusRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ValidateHoi4FileRequest {
-    pub handle_id: Option<String>,
-    pub workspace_root: Option<String>,
-    pub path: Option<String>,
-    pub content: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ProjectValidationToolRequest {
-    pub roots: Vec<ScanRoot>,
-    pub include_game_roots: Option<bool>,
-    pub validation_mode: Option<String>,
-    pub handle_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OpenHoi4LanguageWorkspaceResult {
     pub handle_id: String,
     pub status: Hoi4LanguageWorkspaceStatus,
@@ -99,17 +78,6 @@ pub struct GetHoi4LanguageStatusResult {
     pub workspaces: Vec<Hoi4LanguageWorkspaceStatus>,
     pub runtime_disk_entities: bool,
     pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ValidateHoi4FileResult {
-    pub path: String,
-    pub handle_id: Option<String>,
-    pub diagnostics: Vec<Hoi4Diagnostic>,
-    pub status: String,
-    pub rule_revision: String,
-    pub rule_content_sha256: String,
-    pub runtime_disk_entities: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -145,12 +113,6 @@ pub struct Hoi4Diagnostic {
     pub column: usize,
     pub message: String,
     pub quick_fix: Option<String>,
-}
-
-struct FileValidationContext {
-    rules: Arc<LoadedCwtRules>,
-    handle_id: Option<String>,
-    workspace_root: Option<PathBuf>,
 }
 
 pub fn is_cwt_diagnostics_tool(name: &str) -> bool {
@@ -230,168 +192,6 @@ pub fn get_language_status(
     })
 }
 
-pub fn validate_file(
-    runtime: Arc<RhoiScribeRuntime>,
-    request: ValidateHoi4FileRequest,
-) -> Result<ValidateHoi4FileResult, ToolError> {
-    let validation_context = rules_for_file_validation(&runtime, &request)?;
-    let path = validation_path(&request)?;
-    let content = file_content(
-        &request,
-        validation_context.workspace_root.as_deref(),
-        &path,
-    )?;
-    let diagnostics = validate_content(&validation_context.rules, &path, &content);
-
-    Ok(ValidateHoi4FileResult {
-        path: normalize_path(&path),
-        handle_id: validation_context.handle_id,
-        status: diagnostics_status(&diagnostics),
-        diagnostics,
-        rule_revision: HOI4_CWT_CONFIG_REVISION.to_string(),
-        rule_content_sha256: HOI4_CWT_CONFIG_CONTENT_SHA256.to_string(),
-        runtime_disk_entities: false,
-    })
-}
-
-pub fn validate_project(
-    runtime: Arc<RhoiScribeRuntime>,
-    request: ProjectValidationToolRequest,
-) -> Result<ProjectValidationResult, ToolError> {
-    match validation_mode(request.validation_mode.as_deref())? {
-        ProjectValidationMode::Legacy => {
-            project_validation::validate_hoi4_project(ProjectValidationRequest {
-                roots: request.roots,
-                include_game_roots: request.include_game_roots,
-            })
-            .map_err(ToolError::InvalidRequest)
-        }
-        ProjectValidationMode::Cwt => cwt_project_validation(runtime, request),
-        ProjectValidationMode::Hybrid => {
-            let legacy = project_validation::validate_hoi4_project(ProjectValidationRequest {
-                roots: request.roots.clone(),
-                include_game_roots: request.include_game_roots,
-            })
-            .map_err(ToolError::InvalidRequest)?;
-            let cwt = cwt_project_validation(runtime, request)?;
-            Ok(merge_project_validation(legacy, cwt))
-        }
-    }
-}
-
-fn cwt_project_validation(
-    runtime: Arc<RhoiScribeRuntime>,
-    request: ProjectValidationToolRequest,
-) -> Result<ProjectValidationResult, ToolError> {
-    if request.roots.is_empty() {
-        return Err(ToolError::InvalidRequest(
-            "at least one project root is required".to_string(),
-        ));
-    }
-
-    let (handle_id, snapshot) = project_validation_snapshot(runtime, &request)?;
-
-    let mut checks = Vec::new();
-    for file in &snapshot.files {
-        if file.root_role != "mod" || !is_script_path(&file.path) {
-            continue;
-        }
-        let content = fs::read_to_string(&file.absolute_path).map_err(|error| {
-            ToolError::InvalidRequest(format!(
-                "failed to read CWT validation file `{}`: {}",
-                path_to_string(&file.absolute_path),
-                error
-            ))
-        })?;
-        checks.extend(
-            validate_content(&snapshot.rules, &file.path, &content)
-                .into_iter()
-                .map(project_check_from_diagnostic),
-        );
-    }
-
-    if checks.is_empty() {
-        checks.push(ProjectValidationCheck {
-            id: "cwt_diagnostics".to_string(),
-            status: "green".to_string(),
-            severity: "info".to_string(),
-            path: String::new(),
-            line: 0,
-            message: "CWT validation returned no diagnostics for scanned script files.".to_string(),
-            quick_fix: None,
-        });
-    }
-    sort_project_checks(&mut checks);
-
-    let status = project_status(&checks);
-    let indexed_file_count = snapshot.files.len();
-    let workspace_file_count = snapshot
-        .files
-        .iter()
-        .filter(|file| file.root_role == "mod")
-        .count();
-    let diagnostic_count = checks
-        .iter()
-        .filter(|check| check.id != "cwt_diagnostics" || check.status != "green")
-        .count();
-
-    Ok(ProjectValidationResult {
-        status,
-        index_summary: format!(
-            "CWT indexed {indexed_file_count} file(s) and checked {workspace_file_count} workspace file(s), {diagnostic_count} diagnostic(s)"
-        ),
-        messages: vec![
-            "CWT validation mode uses embedded GitHub rules in process memory only.".to_string(),
-            format!("CWT workspace handle: {handle_id}"),
-        ],
-        checks,
-    })
-}
-
-fn project_validation_snapshot(
-    runtime: Arc<RhoiScribeRuntime>,
-    request: &ProjectValidationToolRequest,
-) -> Result<(String, Arc<CwtWorkspaceSnapshot>), ToolError> {
-    if let Some(handle_id) = &request.handle_id {
-        let handle = runtime
-            .cwt_language()
-            .get_workspace(handle_id)
-            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-            .ok_or_else(|| {
-                ToolError::InvalidRequest(format!("unknown CWT workspace `{handle_id}`"))
-            })?;
-        if handle
-            .snapshot()
-            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-            .is_none()
-        {
-            handle
-                .refresh_blocking()
-                .map_err(|error| ToolError::InvalidRequest(error.to_string()))?;
-        }
-        let snapshot = handle
-            .snapshot()
-            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-            .ok_or_else(|| {
-                ToolError::InvalidRequest("CWT workspace has no warm snapshot".to_string())
-            })?;
-        return Ok((handle.id().to_string(), snapshot));
-    }
-
-    let config = workspace_config_from_project_request(request)?;
-    let handle = runtime
-        .cwt_language()
-        .open_workspace_blocking(config)
-        .map_err(|error| ToolError::InvalidRequest(error.to_string()))?;
-    let snapshot = handle
-        .snapshot()
-        .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-        .ok_or_else(|| {
-            ToolError::InvalidRequest("CWT workspace has no warm snapshot".to_string())
-        })?;
-    Ok((handle.id().to_string(), snapshot))
-}
-
 fn workspace_config_from_open_request(
     request: OpenHoi4LanguageWorkspaceRequest,
 ) -> Result<CwtWorkspaceConfig, ToolError> {
@@ -402,48 +202,6 @@ fn workspace_config_from_open_request(
         vanilla_root: request.vanilla_root.map(PathBuf::from),
         ignore_globs: request.ignore_globs,
         localisation_languages: default_languages(request.localisation_languages),
-        mode,
-    })
-}
-
-fn workspace_config_from_project_request(
-    request: &ProjectValidationToolRequest,
-) -> Result<CwtWorkspaceConfig, ToolError> {
-    let workspace_root = request
-        .roots
-        .iter()
-        .find(|root| {
-            !matches!(
-                root.role.as_deref().map(str::to_ascii_lowercase).as_deref(),
-                Some("game" | "dlc")
-            )
-        })
-        .or_else(|| request.roots.first())
-        .map(|root| PathBuf::from(&root.path))
-        .ok_or_else(|| {
-            ToolError::InvalidRequest("at least one project root is required".to_string())
-        })?;
-    let vanilla_root = request
-        .roots
-        .iter()
-        .find(|root| {
-            root.role
-                .as_deref()
-                .is_some_and(|role| role.eq_ignore_ascii_case("game"))
-        })
-        .map(|root| PathBuf::from(&root.path));
-    let mode = if request.include_game_roots.unwrap_or(false) && vanilla_root.is_some() {
-        CwtWorkspaceMode::Full
-    } else {
-        CwtWorkspaceMode::ModOnly
-    };
-
-    Ok(CwtWorkspaceConfig {
-        workspace_root,
-        rules_source: CwtRulesSource::EmbeddedRulesCrate,
-        vanilla_root,
-        ignore_globs: vec!["target".to_string(), "tmp".to_string(), ".git".to_string()],
-        localisation_languages: vec!["english".to_string()],
         mode,
     })
 }
@@ -465,28 +223,6 @@ fn parse_workspace_mode(mode: Option<&str>) -> Result<CwtWorkspaceMode, ToolErro
     }
 }
 
-fn validation_mode(mode: Option<&str>) -> Result<ProjectValidationMode, ToolError> {
-    match mode.map(str::to_ascii_lowercase).as_deref() {
-        Some("legacy") | Some("legacy_only") | Some("legacy-only") => {
-            Ok(ProjectValidationMode::Legacy)
-        }
-        Some("cwt") | Some("cwt_only") | Some("cwt-only") => Ok(ProjectValidationMode::Cwt),
-        None | Some("hybrid") | Some("cwt_legacy") | Some("cwt+legacy") => {
-            Ok(ProjectValidationMode::Hybrid)
-        }
-        Some(other) => Err(ToolError::InvalidRequest(format!(
-            "unsupported project validation mode `{other}`"
-        ))),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProjectValidationMode {
-    Legacy,
-    Cwt,
-    Hybrid,
-}
-
 fn default_languages(languages: Vec<String>) -> Vec<String> {
     if languages.is_empty() {
         vec!["english".to_string()]
@@ -495,103 +231,11 @@ fn default_languages(languages: Vec<String>) -> Vec<String> {
     }
 }
 
-fn rules_for_file_validation(
-    runtime: &Arc<RhoiScribeRuntime>,
-    request: &ValidateHoi4FileRequest,
-) -> Result<FileValidationContext, ToolError> {
-    if let Some(handle_id) = &request.handle_id {
-        let handle = runtime
-            .cwt_language()
-            .get_workspace(handle_id)
-            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-            .ok_or_else(|| {
-                ToolError::InvalidRequest(format!("unknown CWT workspace `{handle_id}`"))
-            })?;
-        if let Some(snapshot) = handle
-            .snapshot()
-            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-        {
-            return Ok(FileValidationContext {
-                rules: Arc::clone(&snapshot.rules),
-                handle_id: Some(handle_id.clone()),
-                workspace_root: Some(snapshot.workspace_root.clone()),
-            });
-        }
-    }
-
-    let rules = Arc::new(
-        load_embedded_hoi4_cwt_rules()
-            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?,
-    );
-    Ok(FileValidationContext {
-        rules,
-        handle_id: request.handle_id.clone(),
-        workspace_root: request.workspace_root.as_ref().map(PathBuf::from),
-    })
-}
-
-fn file_content(
-    request: &ValidateHoi4FileRequest,
-    workspace_root: Option<&Path>,
+pub(super) fn validate_content(
+    rules: &LoadedCwtRules,
     path: &str,
-) -> Result<String, ToolError> {
-    if let Some(content) = &request.content {
-        return Ok(content.clone());
-    }
-
-    let path = match workspace_root {
-        Some(root) if !Path::new(path).is_absolute() => join_relative_path(root, path),
-        _ => PathBuf::from(path),
-    };
-    fs::read_to_string(&path).map_err(|error| {
-        ToolError::InvalidRequest(format!(
-            "failed to read CWT validation file `{}`: {}",
-            path_to_string(&path),
-            error
-        ))
-    })
-}
-
-fn validation_path(request: &ValidateHoi4FileRequest) -> Result<String, ToolError> {
-    if let Some(path) = request
-        .path
-        .as_deref()
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-    {
-        return Ok(path.to_string());
-    }
-
-    let Some(content) = request.content.as_deref() else {
-        return Err(ToolError::InvalidRequest(
-            "path is required when content is omitted".to_string(),
-        ));
-    };
-
-    Ok(conversation_virtual_path(content).to_string())
-}
-
-fn conversation_virtual_path(content: &str) -> &'static str {
-    let normalized = content.to_ascii_lowercase();
-    if normalized.contains("country_event")
-        || normalized.contains("news_event")
-        || normalized.contains("state_event")
-        || normalized.contains("add_namespace")
-    {
-        "events/rhoiscribe_conversation.txt"
-    } else if normalized.contains("focus_tree") || normalized.contains("focus =") {
-        "common/national_focus/rhoiscribe_conversation.txt"
-    } else if normalized.contains("spritetype")
-        || normalized.contains("containerwindowtype")
-        || normalized.contains("quadtexturesprite")
-    {
-        "interface/rhoiscribe_conversation.gui"
-    } else {
-        "common/scripted_effects/rhoiscribe_conversation.txt"
-    }
-}
-
-fn validate_content(rules: &LoadedCwtRules, path: &str, content: &str) -> Vec<Hoi4Diagnostic> {
+    content: &str,
+) -> Vec<Hoi4Diagnostic> {
     match rules.validate_script(path, content) {
         Ok(diagnostics) => diagnostics.into_iter().map(validation_diagnostic).collect(),
         Err(error) => vec![load_error_diagnostic(path, error)],
@@ -655,18 +299,6 @@ fn load_error_diagnostic(path: &str, error: CwtRuleLoadError) -> Hoi4Diagnostic 
     }
 }
 
-fn project_check_from_diagnostic(diagnostic: Hoi4Diagnostic) -> ProjectValidationCheck {
-    ProjectValidationCheck {
-        id: diagnostic.id,
-        status: diagnostic.status,
-        severity: diagnostic.severity,
-        path: diagnostic.path,
-        line: diagnostic.line,
-        message: diagnostic.message,
-        quick_fix: diagnostic.quick_fix,
-    }
-}
-
 fn status_from_severity(severity: &str) -> &'static str {
     let severity = severity.to_ascii_lowercase();
     if severity.contains("error") {
@@ -675,22 +307,6 @@ fn status_from_severity(severity: &str) -> &'static str {
         "yellow"
     } else {
         "green"
-    }
-}
-
-fn diagnostics_status(diagnostics: &[Hoi4Diagnostic]) -> String {
-    if diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.status == "red")
-    {
-        "red".to_string()
-    } else if diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.status == "yellow")
-    {
-        "yellow".to_string()
-    } else {
-        "green".to_string()
     }
 }
 
@@ -744,86 +360,8 @@ fn vanilla_status(config: &CwtWorkspaceConfig) -> String {
     }
 }
 
-fn merge_project_validation(
-    mut legacy: ProjectValidationResult,
-    cwt: ProjectValidationResult,
-) -> ProjectValidationResult {
-    let cwt_parse_paths = cwt
-        .checks
-        .iter()
-        .filter(|check| check.id == "cwt_parse_error")
-        .map(|check| check.path.clone())
-        .collect::<BTreeSet<_>>();
-    legacy.checks.retain(|check| {
-        !(cwt_parse_paths.contains(&check.path)
-            && matches!(check.id.as_str(), "brace_balance" | "unclosed_block"))
-    });
-    legacy.checks.extend(cwt.checks);
-    sort_project_checks(&mut legacy.checks);
-    legacy.status = project_status(&legacy.checks);
-    legacy
-        .messages
-        .push("Hybrid validation included CWT in-memory diagnostics.".to_string());
-    legacy.messages.extend(cwt.messages);
-    legacy.index_summary = format!("{}; {}", legacy.index_summary, cwt.index_summary);
-    legacy
-}
-
-fn sort_project_checks(checks: &mut [ProjectValidationCheck]) {
-    checks.sort_by(|left, right| {
-        (
-            status_rank(&left.status),
-            &left.id,
-            &left.path,
-            left.line,
-            &left.message,
-        )
-            .cmp(&(
-                status_rank(&right.status),
-                &right.id,
-                &right.path,
-                right.line,
-                &right.message,
-            ))
-    });
-}
-
-fn project_status(checks: &[ProjectValidationCheck]) -> String {
-    if checks.iter().any(|check| check.status == "red") {
-        "red"
-    } else if checks.iter().any(|check| check.status == "yellow") {
-        "yellow"
-    } else {
-        "green"
-    }
-    .to_string()
-}
-
-fn status_rank(status: &str) -> u8 {
-    match status {
-        "red" => 0,
-        "yellow" => 1,
-        "green" => 2,
-        _ => 3,
-    }
-}
-
-fn is_script_path(path: &str) -> bool {
-    let extension = path.rsplit('.').next().unwrap_or_default();
-    matches!(
-        extension.to_ascii_lowercase().as_str(),
-        "txt" | "gui" | "gfx" | "sfx" | "asset" | "map"
-    )
-}
-
 fn normalize_path(path: &str) -> String {
     path.replace('\\', "/")
-}
-
-fn join_relative_path(root: &Path, path: &str) -> PathBuf {
-    path.split('/')
-        .filter(|part| !part.is_empty())
-        .fold(root.to_path_buf(), |current, part| current.join(part))
 }
 
 fn path_to_string(path: &Path) -> String {

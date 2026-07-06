@@ -39,8 +39,9 @@ use crate::{
 use super::{
     GeneratedFile, LocalisationBatchRequest, LocalisationEntry, ProjectIndexItem, ScanRoot,
     ToolEngine, ToolError,
+    cwt_indexing::{CwtIndexQuery, index_project},
     paradox_lexer::{Token, TokenKind, tokenize},
-    project_index::{self, IndexedFile, ProjectIndexRequest, ProjectIndexResult},
+    project_index::{IndexedFile, ProjectIndexResult},
 };
 
 const CWT_LOCALISATION_TOOL_NAMES: &[&str] = &["generate_missing_localisation"];
@@ -85,13 +86,6 @@ pub struct MissingLocalisationCandidate {
     pub confidence: String,
 }
 
-struct IndexQuery<'a> {
-    handle_id: Option<&'a str>,
-    workspace_root: Option<&'a str>,
-    roots: &'a [ScanRoot],
-    include_game_roots: Option<bool>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LocalisationReference {
     key: String,
@@ -99,6 +93,18 @@ struct LocalisationReference {
     path: String,
     root: String,
     line: usize,
+}
+
+struct LocalisationGenerationOptions {
+    language: String,
+    file_stem: String,
+    limit: usize,
+}
+
+struct MissingLocalisationAnalysis {
+    candidates: Vec<MissingLocalisationCandidate>,
+    existing_key_count: usize,
+    cwt_diagnostic_count: usize,
 }
 
 pub fn is_cwt_localisation_tool(name: &str) -> bool {
@@ -109,59 +115,30 @@ pub fn generate_missing_localisation(
     runtime: Arc<RhoiScribeRuntime>,
     request: GenerateMissingLocalisationRequest,
 ) -> Result<GenerateMissingLocalisationResult, ToolError> {
-    if request.dry_run == Some(false) {
-        return Err(ToolError::InvalidRequest(
-            "generate_missing_localisation is dry-run only; call generate_localisation_batch with the returned entries when writing is approved".to_string(),
-        ));
-    }
-
-    let language = request.language.unwrap_or_else(|| "english".to_string());
-    let file_stem = request
-        .file_stem
-        .unwrap_or_else(|| "missing_localisation".to_string());
-    let limit = request.limit.unwrap_or(200).clamp(1, 1000);
+    ensure_dry_run(request.dry_run)?;
+    let options = localisation_generation_options(&request);
     let index = index_project(
         &runtime,
-        IndexQuery {
+        CwtIndexQuery {
             handle_id: request.handle_id.as_deref(),
             workspace_root: request.workspace_root.as_deref(),
             roots: &request.roots,
             include_game_roots: request.include_game_roots,
+            missing_roots_message: "handle_id, workspace_root, or roots is required for localisation generation",
         },
     )?;
     let rules = rules_for_query(&runtime, request.handle_id.as_deref())?;
-    let existing_keys = existing_localisation_keys(&index.definitions);
-    let cwt_lines = cwt_localisation_diagnostic_lines(&index.files, rules.as_deref());
-    let references = collect_missing_references(&index.files, &existing_keys)?;
-    let candidates = references
-        .into_values()
-        .take(limit)
-        .map(|reference| candidate_from_reference(reference, &cwt_lines))
-        .collect::<Vec<_>>();
-    let entries = candidates
-        .iter()
-        .map(|candidate| LocalisationEntry {
-            key: candidate.key.clone(),
-            value: candidate.value.clone(),
-        })
-        .collect::<Vec<_>>();
-    let generated = ToolEngine::generate_localisation_batch(LocalisationBatchRequest {
-        language: language.clone(),
-        file_stem: file_stem.clone(),
-        key_prefix: None,
-        entries,
-        dry_run: true,
-        output_root: None,
-    })?;
+    let analysis = analyse_missing_localisation(&index, rules.as_deref(), options.limit);
+    let generated_files = render_localisation_batch(&options, &analysis.candidates)?;
 
     Ok(GenerateMissingLocalisationResult {
         dry_run: true,
-        language,
-        file_stem,
-        candidates,
-        files: generated.files,
-        existing_key_count: existing_keys.len(),
-        cwt_diagnostic_count: cwt_lines.len(),
+        language: options.language,
+        file_stem: options.file_stem,
+        candidates: analysis.candidates,
+        files: generated_files,
+        existing_key_count: analysis.existing_key_count,
+        cwt_diagnostic_count: analysis.cwt_diagnostic_count,
         source: "cwt_diagnostics_with_rhoiscribe_loc_index".to_string(),
         rule_source_revision: HOI4_CWT_CONFIG_REVISION.to_string(),
         rule_content_sha256: HOI4_CWT_CONFIG_CONTENT_SHA256.to_string(),
@@ -175,69 +152,72 @@ pub fn generate_missing_localisation(
     })
 }
 
-fn index_project(
-    runtime: &Arc<RhoiScribeRuntime>,
-    query: IndexQuery<'_>,
-) -> Result<ProjectIndexResult, ToolError> {
-    let roots = resolve_scan_roots(runtime, &query)?;
-    project_index::index_hoi4_project(ProjectIndexRequest {
-        roots,
-        include_game_roots: query.include_game_roots,
+fn ensure_dry_run(dry_run: Option<bool>) -> Result<(), ToolError> {
+    if dry_run == Some(false) {
+        return Err(ToolError::InvalidRequest(
+            "generate_missing_localisation is dry-run only; call generate_localisation_batch with the returned entries when writing is approved".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn localisation_generation_options(
+    request: &GenerateMissingLocalisationRequest,
+) -> LocalisationGenerationOptions {
+    LocalisationGenerationOptions {
+        language: request
+            .language
+            .clone()
+            .unwrap_or_else(|| "english".to_string()),
+        file_stem: request
+            .file_stem
+            .clone()
+            .unwrap_or_else(|| "missing_localisation".to_string()),
+        limit: request.limit.unwrap_or(200).clamp(1, 1000),
+    }
+}
+
+fn analyse_missing_localisation(
+    index: &ProjectIndexResult,
+    rules: Option<&LoadedCwtRules>,
+    limit: usize,
+) -> MissingLocalisationAnalysis {
+    let existing_keys = existing_localisation_keys(&index.definitions);
+    let cwt_lines = cwt_localisation_diagnostic_lines(&index.files, rules);
+    let candidates = collect_missing_references(&index.files, &existing_keys)
+        .into_values()
+        .take(limit)
+        .map(|reference| candidate_from_reference(reference, &cwt_lines))
+        .collect::<Vec<_>>();
+
+    MissingLocalisationAnalysis {
+        candidates,
+        existing_key_count: existing_keys.len(),
+        cwt_diagnostic_count: cwt_lines.len(),
+    }
+}
+
+fn render_localisation_batch(
+    options: &LocalisationGenerationOptions,
+    candidates: &[MissingLocalisationCandidate],
+) -> Result<Vec<GeneratedFile>, ToolError> {
+    let entries = candidates
+        .iter()
+        .map(|candidate| LocalisationEntry {
+            key: candidate.key.clone(),
+            value: candidate.value.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    ToolEngine::generate_localisation_batch(LocalisationBatchRequest {
+        language: options.language.clone(),
+        file_stem: options.file_stem.clone(),
+        key_prefix: None,
+        entries,
+        dry_run: true,
+        output_root: None,
     })
-    .map_err(ToolError::InvalidRequest)
-}
-
-fn resolve_scan_roots(
-    runtime: &Arc<RhoiScribeRuntime>,
-    query: &IndexQuery<'_>,
-) -> Result<Vec<ScanRoot>, ToolError> {
-    if !query.roots.is_empty() {
-        return Ok(query.roots.to_vec());
-    }
-    if let Some(workspace_root) = query.workspace_root {
-        return Ok(vec![ScanRoot {
-            path: workspace_root.to_string(),
-            role: Some("mod".to_string()),
-        }]);
-    }
-    if let Some(handle_id) = query.handle_id {
-        let workspace_root = workspace_root_from_handle(runtime, handle_id)?;
-        return Ok(vec![ScanRoot {
-            path: path_to_string(&workspace_root),
-            role: Some("mod".to_string()),
-        }]);
-    }
-
-    Err(ToolError::InvalidRequest(
-        "handle_id, workspace_root, or roots is required for localisation generation".to_string(),
-    ))
-}
-
-fn workspace_root_from_handle(
-    runtime: &Arc<RhoiScribeRuntime>,
-    handle_id: &str,
-) -> Result<PathBuf, ToolError> {
-    let handle = runtime
-        .cwt_language()
-        .get_workspace(handle_id)
-        .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-        .ok_or_else(|| ToolError::InvalidRequest(format!("unknown CWT workspace `{handle_id}`")))?;
-
-    if handle
-        .snapshot()
-        .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-        .is_none()
-    {
-        handle
-            .refresh_blocking()
-            .map_err(|error| ToolError::InvalidRequest(error.to_string()))?;
-    }
-
-    handle
-        .snapshot()
-        .map_err(|error| ToolError::InvalidRequest(error.to_string()))?
-        .map(|snapshot| snapshot.workspace_root.clone())
-        .ok_or_else(|| ToolError::InvalidRequest("CWT workspace has no warm snapshot".to_string()))
+    .map(|result| result.files)
 }
 
 fn rules_for_query(
@@ -277,7 +257,7 @@ fn existing_localisation_keys(definitions: &[ProjectIndexItem]) -> BTreeSet<Stri
 fn collect_missing_references(
     files: &[IndexedFile],
     existing_keys: &BTreeSet<String>,
-) -> Result<BTreeMap<String, LocalisationReference>, ToolError> {
+) -> BTreeMap<String, LocalisationReference> {
     let mut references = BTreeMap::new();
 
     for file in files
@@ -285,13 +265,9 @@ fn collect_missing_references(
         .filter(|file| is_script_with_localisation_refs(&file.path))
     {
         let path = join_relative_path(Path::new(&file.root), &file.path);
-        let content = fs::read_to_string(&path).map_err(|error| {
-            ToolError::InvalidRequest(format!(
-                "failed to read localisation reference file `{}`: {}",
-                path_to_string(&path),
-                error
-            ))
-        })?;
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
         let is_txt = extension_is(&file.path, "txt");
         for (reference_key, key, line) in localisation_references(&content, is_txt) {
             if existing_keys.contains(&key) || is_inline_or_builtin_loc_value(&key) {
@@ -309,7 +285,7 @@ fn collect_missing_references(
         }
     }
 
-    Ok(references)
+    references
 }
 
 fn cwt_localisation_diagnostic_lines(
@@ -450,17 +426,19 @@ fn is_localisation_diagnostic(code: Option<&str>, message: &str) -> bool {
 }
 
 fn suggested_value(key: &str, reference_key: &str) -> String {
-    let base = key
-        .rsplit_once('.')
+    let title = title_case(&localisation_value_base(key));
+    match reference_key {
+        "desc" | "description" => format!("TODO: {title} description"),
+        "name" | "title" => title,
+        _ => format!("TODO: {title}"),
+    }
+}
+
+fn localisation_value_base(key: &str) -> String {
+    key.rsplit_once('.')
         .map(|(_, suffix)| suffix)
         .unwrap_or(key)
-        .replace(['_', '-'], " ");
-    match reference_key {
-        "desc" | "description" => format!("TODO: {} description", title_case(&base)),
-        "name" => title_case(&base),
-        "title" => title_case(&base),
-        _ => format!("TODO: {}", title_case(&base)),
-    }
+        .replace(['_', '-'], " ")
 }
 
 fn title_case(value: &str) -> String {
@@ -499,8 +477,4 @@ fn join_relative_path(root: &Path, path: &str) -> PathBuf {
 
 fn normalize_path(path: &str) -> String {
     path.replace('\\', "/")
-}
-
-fn path_to_string(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
 }

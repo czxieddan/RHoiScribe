@@ -53,6 +53,12 @@ pub(crate) struct CwtResourceText {
     pub(crate) mime_type: &'static str,
 }
 
+enum TomlValue {
+    String(String),
+    Integer(usize),
+    Bool(bool),
+}
+
 impl CwtResourceCatalog {
     pub fn load_embedded() -> Self {
         Self {
@@ -105,6 +111,13 @@ pub(crate) fn is_cwt_resource_uri(uri: &str) -> bool {
 
 fn catalog_index_toml() -> String {
     let mut output = String::new();
+    for (key, value) in catalog_index_entries() {
+        write_toml_entry(&mut output, key, value);
+    }
+    output
+}
+
+fn catalog_index_entries() -> Vec<(&'static str, TomlValue)> {
     let source_slug = HOI4_CWT_CONFIG.source_slug();
     let repository_url = HOI4_CWT_CONFIG.repository_url();
     let upstream_url = HOI4_CWT_CONFIG.upstream_url();
@@ -112,93 +125,48 @@ fn catalog_index_toml() -> String {
     let embedded_source_id = HOI4_CWT_CONFIG.embedded_source_id();
     let virtual_source_prefix = HOI4_CWT_CONFIG.virtual_source_prefix();
 
-    writeln!(
-        &mut output,
-        "source_format = {}",
-        toml_string(HOI4_CWT_CONFIG.source_format)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "runtime_storage = {}",
-        toml_string(HOI4_CWT_CONFIG.runtime_storage)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(&mut output, "source_slug = {}", toml_string(&source_slug))
-        .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "source_directory = {}",
-        toml_string(HOI4_CWT_CONFIG.source_directory)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "repository_url = {}",
-        toml_string(&repository_url)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(&mut output, "git_url = {}", toml_string(&git_url))
-        .expect("writing to String cannot fail");
-    writeln!(&mut output, "upstream_url = {}", toml_string(&upstream_url))
-        .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "revision = {}",
-        toml_string(HOI4_CWT_CONFIG.revision)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "upstream_revision = {}",
-        toml_string(HOI4_CWT_CONFIG.upstream_revision)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "license = {}",
-        toml_string(HOI4_CWT_CONFIG.license)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "embedded_source_id = {}",
-        toml_string(&embedded_source_id)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "content_sha256 = {}",
-        toml_string(HOI4_CWT_CONFIG_CONTENT_SHA256)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "rule_source_count = {}",
-        HOI4_CWT_CONFIG_SOURCE_COUNT
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "rule_source_bytes = {}",
-        HOI4_CWT_CONFIG_TOTAL_BYTES
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        &mut output,
-        "virtual_source_prefix = {}",
-        toml_string(&virtual_source_prefix)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(&mut output, "embedded_rule_files_in_repo = false")
-        .expect("writing to String cannot fail");
-    writeln!(&mut output, "embedded_archive_bytes_in_binary = false")
-        .expect("writing to String cannot fail");
-    writeln!(&mut output, "embedded_static_sources_in_binary = true")
-        .expect("writing to String cannot fail");
-    writeln!(&mut output, "runtime_disk_entities = false").expect("writing to String cannot fail");
+    vec![
+        string_entry("source_format", HOI4_CWT_CONFIG.source_format),
+        string_entry("runtime_storage", HOI4_CWT_CONFIG.runtime_storage),
+        string_entry("source_slug", source_slug),
+        string_entry("source_directory", HOI4_CWT_CONFIG.source_directory),
+        string_entry("repository_url", repository_url),
+        string_entry("git_url", git_url),
+        string_entry("upstream_url", upstream_url),
+        string_entry("revision", HOI4_CWT_CONFIG.revision),
+        string_entry("upstream_revision", HOI4_CWT_CONFIG.upstream_revision),
+        string_entry("license", HOI4_CWT_CONFIG.license),
+        string_entry("embedded_source_id", embedded_source_id),
+        string_entry("content_sha256", HOI4_CWT_CONFIG_CONTENT_SHA256),
+        integer_entry("rule_source_count", HOI4_CWT_CONFIG_SOURCE_COUNT),
+        integer_entry("rule_source_bytes", HOI4_CWT_CONFIG_TOTAL_BYTES),
+        string_entry("virtual_source_prefix", virtual_source_prefix),
+        bool_entry("embedded_rule_files_in_repo", false),
+        bool_entry("embedded_archive_bytes_in_binary", false),
+        bool_entry("embedded_static_sources_in_binary", true),
+        bool_entry("runtime_disk_entities", false),
+    ]
+}
 
-    output
+fn string_entry(key: &'static str, value: impl Into<String>) -> (&'static str, TomlValue) {
+    (key, TomlValue::String(value.into()))
+}
+
+fn integer_entry(key: &'static str, value: usize) -> (&'static str, TomlValue) {
+    (key, TomlValue::Integer(value))
+}
+
+fn bool_entry(key: &'static str, value: bool) -> (&'static str, TomlValue) {
+    (key, TomlValue::Bool(value))
+}
+
+fn write_toml_entry(output: &mut String, key: &str, value: TomlValue) {
+    match value {
+        TomlValue::String(value) => writeln!(output, "{} = {}", key, toml_string(&value)),
+        TomlValue::Integer(value) => writeln!(output, "{key} = {value}"),
+        TomlValue::Bool(value) => writeln!(output, "{key} = {value}"),
+    }
+    .expect("writing to String cannot fail");
 }
 
 fn metadata_markdown() -> String {

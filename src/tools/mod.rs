@@ -19,9 +19,15 @@
 // https://github.com/czxieddan/RHoiScribe
 //------------------------------------------------------------------------------------
 
+mod cwt_common;
+mod cwt_completion;
 mod cwt_diagnostics;
+mod cwt_file_validation;
+mod cwt_indexing;
 mod cwt_intelligence;
 mod cwt_localisation;
+mod cwt_profiles;
+mod cwt_project_validation;
 mod environment;
 mod error_log;
 mod gui_gfx_asset;
@@ -51,22 +57,26 @@ use crate::{
     resources::{KNOWLEDGE_TOPIC_URI_PREFIX, KnowledgeCatalog},
 };
 
+pub use cwt_completion::{
+    Hoi4CompletionSuggestion, SuggestHoi4CompletionRequest, SuggestHoi4CompletionResult,
+};
 pub use cwt_diagnostics::{
     GetHoi4LanguageStatusRequest, GetHoi4LanguageStatusResult, Hoi4Diagnostic,
     Hoi4LanguageWorkspaceStatus, OpenHoi4LanguageWorkspaceRequest, OpenHoi4LanguageWorkspaceResult,
-    ValidateHoi4FileRequest, ValidateHoi4FileResult,
 };
+pub use cwt_file_validation::{ValidateHoi4FileRequest, ValidateHoi4FileResult};
 pub use cwt_intelligence::{
     ExplainHoi4DiagnosticRequest, ExplainHoi4DiagnosticResult, FindHoi4DefinitionRequest,
     FindHoi4DefinitionResult, FindHoi4ReferencesRequest, FindHoi4ReferencesResult,
-    Hoi4CompletionSuggestion, Hoi4LanguageSymbol, InspectHoi4ScopeRequest, InspectHoi4ScopeResult,
+    Hoi4LanguageSymbol, InspectHoi4ScopeRequest, InspectHoi4ScopeResult,
     InspectHoi4TypeRuleRequest, InspectHoi4TypeRuleResult, ListHoi4WorkspaceSymbolsRequest,
-    ListHoi4WorkspaceSymbolsResult, SuggestHoi4CompletionRequest, SuggestHoi4CompletionResult,
+    ListHoi4WorkspaceSymbolsResult,
 };
 pub use cwt_localisation::{
     GenerateMissingLocalisationRequest, GenerateMissingLocalisationResult,
     MissingLocalisationCandidate,
 };
+pub use cwt_project_validation::ProjectValidationToolRequest;
 pub use environment::{
     DiscoverHoi4EnvironmentRequest, Hoi4DebugRunRequest, Hoi4DebugRunResult, Hoi4EnvironmentResult,
     Hoi4QualityCheck,
@@ -1039,7 +1049,7 @@ fn call_validate_hoi4_file(
     arguments: JsonObject,
 ) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<ValidateHoi4FileRequest>(arguments)?;
-    Ok(structured_result(cwt_diagnostics::validate_file(
+    Ok(structured_result(cwt_file_validation::validate_file(
         context.runtime(),
         request,
     )?))
@@ -1093,7 +1103,7 @@ fn call_suggest_hoi4_completion(
     arguments: JsonObject,
 ) -> Result<CallToolResult, ToolError> {
     let request = parse_arguments::<SuggestHoi4CompletionRequest>(arguments)?;
-    Ok(structured_result(cwt_intelligence::suggest_completion(
+    Ok(structured_result(cwt_completion::suggest_completion(
         context.runtime(),
         request,
     )?))
@@ -1277,8 +1287,9 @@ fn call_validate_hoi4_project(
     context: &ToolContext,
     arguments: JsonObject,
 ) -> Result<CallToolResult, ToolError> {
-    let request = parse_arguments::<cwt_diagnostics::ProjectValidationToolRequest>(arguments)?;
-    Ok(structured_result(cwt_diagnostics::validate_project(
+    let request =
+        parse_arguments::<cwt_project_validation::ProjectValidationToolRequest>(arguments)?;
+    Ok(structured_result(cwt_project_validation::validate_project(
         context.runtime(),
         request,
     )?))

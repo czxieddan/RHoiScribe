@@ -367,36 +367,77 @@ fn collect_workspace_files(
             path: path_to_string(directory),
             message: error.to_string(),
         })?;
-        let path = entry.path();
-        let file_type = entry
-            .file_type()
-            .map_err(|error| CwtWorkspaceError::WorkspaceRead {
-                path: path_to_string(&path),
-                message: error.to_string(),
-            })?;
-
-        if file_type.is_dir() {
-            if !is_ignored(root, &path, config) {
-                collect_workspace_files(root, &path, root_role, config, files)?;
-            }
-        } else if file_type.is_file() && is_language_file(&path) {
-            let relative_path = relative_path(root, &path);
-            if !is_ignored_path(&relative_path, &config.ignore_globs) {
-                let metadata =
-                    fs::metadata(&path).map_err(|error| CwtWorkspaceError::WorkspaceRead {
-                        path: path_to_string(&path),
-                        message: error.to_string(),
-                    })?;
-                files.push(CwtIndexedFile {
-                    path: relative_path,
-                    absolute_path: path,
-                    root_role: root_role.to_string(),
-                    byte_len: metadata.len(),
-                });
-            }
-        }
+        collect_workspace_entry(root, root_role, config, files, entry)?;
     }
 
+    Ok(())
+}
+
+fn collect_workspace_entry(
+    root: &Path,
+    root_role: &str,
+    config: &CwtWorkspaceConfig,
+    files: &mut Vec<CwtIndexedFile>,
+    entry: fs::DirEntry,
+) -> Result<(), CwtWorkspaceError> {
+    let path = entry.path();
+    let file_type = entry
+        .file_type()
+        .map_err(|error| CwtWorkspaceError::WorkspaceRead {
+            path: path_to_string(&path),
+            message: error.to_string(),
+        })?;
+
+    if file_type.is_dir() {
+        collect_workspace_directory(root, &path, root_role, config, files)
+    } else if should_index_file(root, &path, config, &file_type) {
+        push_indexed_file(root, path, root_role, files)
+    } else {
+        Ok(())
+    }
+}
+
+fn collect_workspace_directory(
+    root: &Path,
+    path: &Path,
+    root_role: &str,
+    config: &CwtWorkspaceConfig,
+    files: &mut Vec<CwtIndexedFile>,
+) -> Result<(), CwtWorkspaceError> {
+    if is_ignored(root, path, config) {
+        return Ok(());
+    }
+    collect_workspace_files(root, path, root_role, config, files)
+}
+
+fn should_index_file(
+    root: &Path,
+    path: &Path,
+    config: &CwtWorkspaceConfig,
+    file_type: &fs::FileType,
+) -> bool {
+    if !file_type.is_file() || !is_language_file(path) {
+        return false;
+    }
+    !is_ignored_path(&relative_path(root, path), &config.ignore_globs)
+}
+
+fn push_indexed_file(
+    root: &Path,
+    path: PathBuf,
+    root_role: &str,
+    files: &mut Vec<CwtIndexedFile>,
+) -> Result<(), CwtWorkspaceError> {
+    let metadata = fs::metadata(&path).map_err(|error| CwtWorkspaceError::WorkspaceRead {
+        path: path_to_string(&path),
+        message: error.to_string(),
+    })?;
+    files.push(CwtIndexedFile {
+        path: relative_path(root, &path),
+        absolute_path: path,
+        root_role: root_role.to_string(),
+        byte_len: metadata.len(),
+    });
     Ok(())
 }
 
@@ -461,18 +502,45 @@ fn wildcard_match(pattern: &str, path: &str) -> bool {
     if pattern == "*" || pattern == "**" {
         return true;
     }
-    if !pattern.contains('*') {
-        return path == pattern || path.contains(pattern);
+
+    if pattern.contains('/') {
+        return anchored_wildcard_match(pattern, path);
     }
 
-    let mut remainder = path;
-    for part in pattern.split('*').filter(|part| !part.is_empty()) {
-        let Some(position) = remainder.find(part) else {
-            return false;
-        };
-        remainder = &remainder[position + part.len()..];
+    path.split('/')
+        .any(|segment| anchored_wildcard_match(pattern, segment))
+}
+
+fn anchored_wildcard_match(pattern: &str, text: &str) -> bool {
+    let pattern = pattern.chars().collect::<Vec<_>>();
+    let text = text.chars().collect::<Vec<_>>();
+    let mut matches = vec![vec![false; text.len() + 1]; pattern.len() + 1];
+    matches[0][0] = true;
+
+    for index in 1..=pattern.len() {
+        matches[index][0] = pattern[index - 1] == '*' && matches[index - 1][0];
     }
-    true
+    for pattern_index in 1..=pattern.len() {
+        for text_index in 1..=text.len() {
+            matches[pattern_index][text_index] =
+                wildcard_cell_matches(&pattern, &text, &matches, pattern_index, text_index);
+        }
+    }
+
+    matches[pattern.len()][text.len()]
+}
+
+fn wildcard_cell_matches(
+    pattern: &[char],
+    text: &[char],
+    matches: &[Vec<bool>],
+    pattern_index: usize,
+    text_index: usize,
+) -> bool {
+    if pattern[pattern_index - 1] == '*' {
+        return matches[pattern_index - 1][text_index] || matches[pattern_index][text_index - 1];
+    }
+    pattern[pattern_index - 1] == text[text_index - 1] && matches[pattern_index - 1][text_index - 1]
 }
 
 fn relative_path(root: &Path, path: &Path) -> String {
