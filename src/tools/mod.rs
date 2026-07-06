@@ -21,6 +21,7 @@
 
 mod cwt_diagnostics;
 mod cwt_intelligence;
+mod cwt_localisation;
 mod environment;
 mod error_log;
 mod gui_gfx_asset;
@@ -61,6 +62,10 @@ pub use cwt_intelligence::{
     Hoi4CompletionSuggestion, Hoi4LanguageSymbol, InspectHoi4ScopeRequest, InspectHoi4ScopeResult,
     InspectHoi4TypeRuleRequest, InspectHoi4TypeRuleResult, ListHoi4WorkspaceSymbolsRequest,
     ListHoi4WorkspaceSymbolsResult, SuggestHoi4CompletionRequest, SuggestHoi4CompletionResult,
+};
+pub use cwt_localisation::{
+    GenerateMissingLocalisationRequest, GenerateMissingLocalisationResult,
+    MissingLocalisationCandidate,
 };
 pub use environment::{
     DiscoverHoi4EnvironmentRequest, Hoi4DebugRunRequest, Hoi4DebugRunResult, Hoi4EnvironmentResult,
@@ -167,6 +172,13 @@ const TOOL_SPECS: &[ToolSpec] = &[
         description: "Inspect the embedded CWT rule profile that applies to a file path and optional node path, including rule/type name, source revision, virtual rule path, confidence, and limitations.",
         required: &["path"],
         handler: call_inspect_hoi4_type_rule,
+    },
+    ToolSpec {
+        name: "generate_missing_localisation",
+        title: "Generate missing localisation",
+        description: "Generate reviewable dry-run localisation entries from CWT/RHoiScribe missing-localisation analysis and workspace loc indexes. Never writes files; use generate_localisation_batch with returned entries when writing is explicitly approved.",
+        required: &[],
+        handler: call_generate_missing_localisation,
     },
     ToolSpec {
         name: "generate_localisation_batch",
@@ -656,6 +668,7 @@ impl ToolCatalog {
     ) -> Result<(), ToolError> {
         if cwt_diagnostics::should_skip_tool_log(name, &arguments)
             || cwt_intelligence::is_cwt_intelligence_tool(name)
+            || cwt_localisation::is_cwt_localisation_tool(name)
         {
             return Ok(());
         }
@@ -1106,6 +1119,16 @@ fn call_inspect_hoi4_type_rule(
         context.runtime(),
         request,
     )?))
+}
+
+fn call_generate_missing_localisation(
+    context: &ToolContext,
+    arguments: JsonObject,
+) -> Result<CallToolResult, ToolError> {
+    let request = parse_arguments::<GenerateMissingLocalisationRequest>(arguments)?;
+    Ok(structured_result(
+        cwt_localisation::generate_missing_localisation(context.runtime(), request)?,
+    ))
 }
 
 fn call_generate_focus_batch(
