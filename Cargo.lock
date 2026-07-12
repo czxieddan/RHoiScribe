@@ -515,7 +515,7 @@ dependencies = [
 [[package]]
 name = "cwtools-hoi4-config"
 version = "0.1.0"
-source = "git+https://github.com/Hilde-Research-Foundation/cwtools-hoi4-config-rs.git?rev=4f19c45ee151fc7052351a925975146b75591dee#4f19c45ee151fc7052351a925975146b75591dee"
+source = "git+https://github.com/Hilde-Research-Foundation/cwtools-hoi4-config-rs.git?rev=c8bc2d825d066ec69e413ee9ace9c1ffc02103f3#c8bc2d825d066ec69e413ee9ace9c1ffc02103f3"
 dependencies = [
  "serde",
  "sha2 0.10.9",

@@ -8,7 +8,7 @@ build = "build.rs"
 [dependencies]
 anyhow = "1.0.102"
 cwtools_parser = { git = "https://github.com/MillenniumDawn/cwtools.git", rev = "cb7f8c8c95dd68fcbd06d37efb87bc49fc17fbef", package = "cwtools_parser" }
-cwtools-hoi4-config = { git = "https://github.com/Hilde-Research-Foundation/cwtools-hoi4-config-rs.git", rev = "4f19c45ee151fc7052351a925975146b75591dee" }
+cwtools-hoi4-config = { git = "https://github.com/Hilde-Research-Foundation/cwtools-hoi4-config-rs.git", rev = "c8bc2d825d066ec69e413ee9ace9c1ffc02103f3" }
 cwtools_rules = { git = "https://github.com/MillenniumDawn/cwtools.git", rev = "cb7f8c8c95dd68fcbd06d37efb87bc49fc17fbef", package = "cwtools_rules" }
 cwtools_string_table = { git = "https://github.com/MillenniumDawn/cwtools.git", rev = "cb7f8c8c95dd68fcbd06d37efb87bc49fc17fbef", package = "cwtools_string_table" }
 cwtools_validation = { git = "https://github.com/MillenniumDawn/cwtools.git", rev = "cb7f8c8c95dd68fcbd06d37efb87bc49fc17fbef", package = "cwtools_validation" }
