@@ -14,6 +14,9 @@ RHoiScribe 是一个通过 stdio 启动的本地 MCP server，适用于 Codex、
 - Linux: `rhoiscribe-linux-x86_64`
 - macOS: `rhoiscribe-macos-universal`
 
+> [!WARNING]
+> Skill 包暂时还会保留，但它已经不是新语言支持的推荐入口。语言支持需要一个能持续保温的进程，Skill 的短进程模型不太合适；后续会逐步灰度退场。能用 MCP server 的场景，请优先使用 MCP server。
+
 如果你的 agent 可以读取本地 Skill 文件夹，也可以下载 Skill 包：
 
 - Windows: `rhoiscribe-skill-windows-x86_64.zip`
@@ -31,8 +34,6 @@ cargo build --release
 ```
 
 ## 路径
-
-文档和提交到仓库的示例中请使用占位符，只在自己的私有客户端配置里替换为真实路径：
 
 - `<RHOISCRIBE_COMMAND>`：`--print-command` 打印出的绝对路径。
 - `<ABSOLUTE_PATH_TO_RHOISCRIBE>`：本仓库或 release 文件夹在用户机器上的绝对路径。
@@ -167,15 +168,6 @@ Windows 客户端通常需要 `.exe` 路径，并在 JSON 中转义反斜杠：
 ```
 
 MCP server 模式会在同一进程内保留已预热的 CWT 语言工作区。直接 `--skill` 命令也能使用同一套能力，但每次命令都是短进程，因此温热状态不会跨命令保留。
-
-## 运行基础
-
-- Transport: stdio。
-- 运行时联网：不需要。
-- Prompts: 通过 `prompts/list` 和 `prompts/get` 获取。
-- Resources: 通过 `resources/list` 和 `resources/read` 获取。
-- Tools: 通过 `tools/list` 和 `tools/call` 调用。
-- 功能说明和推荐工作流见 [详细功能介绍](features.zh-CN.md)。
 
 ## 冒烟测试
 

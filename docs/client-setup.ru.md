@@ -14,6 +14,9 @@ RHoiScribe — локальный MCP server, запускаемый через 
 - Linux: `rhoiscribe-linux-x86_64`
 - macOS: `rhoiscribe-macos-universal`
 
+> [!WARNING]
+> Skill package пока остается доступным, но для новой языковой поддержки это уже не рекомендуемый путь. Ей нужен долгоживущий процесс, который остается прогретым; Skill запускается короткими вызовами, поэтому поддержка Skill будет постепенно сворачиваться. Если клиент умеет работать с MCP server, лучше использовать его.
+
 Для agents, которые умеют читать локальную Skill folder, доступны Skill packages:
 
 - Windows: `rhoiscribe-skill-windows-x86_64.zip`
@@ -31,8 +34,6 @@ cargo build --release
 ```
 
 ## Пути
-
-В документации и примерах, которые попадают в репозиторий, используйте placeholders. Заменяйте их на реальные пути только в своей private client configuration:
 
 - `<RHOISCRIBE_COMMAND>`: абсолютный путь, который выводит `--print-command`.
 - `<ABSOLUTE_PATH_TO_RHOISCRIBE>`: абсолютный путь к этому repository или release folder на машине пользователя.
@@ -167,15 +168,6 @@ Windows clients обычно требуют path к `.exe` и экраниров
 ```
 
 MCP server mode держит CWT language workspaces прогретыми в process memory между tool calls. Прямые `--skill` commands открывают те же возможности, но каждый command — короткоживущий process, поэтому прогретое CWT state не сохраняется между вызовами.
-
-## Основы выполнения
-
-- Transport: stdio.
-- Runtime network: не требуется.
-- Prompts: доступны через `prompts/list` и `prompts/get`.
-- Resources: доступны через `resources/list` и `resources/read`.
-- Tools: доступны через `tools/list` и `tools/call`.
-- Описание возможностей и рекомендуемые workflows: [руководство по возможностям](features.ru.md).
 
 ## Быстрая проверка
 

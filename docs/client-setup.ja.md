@@ -14,6 +14,9 @@ RHoiScribe は stdio で起動するローカル MCP server です。Codex、Cla
 - Linux: `rhoiscribe-linux-x86_64`
 - macOS: `rhoiscribe-macos-universal`
 
+> [!WARNING]
+> Skill package は当面残しますが、新しい language support の推奨経路ではなくなります。この機能は温まったまま動く長時間の process と相性がよく、短い呼び出しで終わる Skill には向きません。Skill support は今後段階的に縮小します。client が MCP server を使える場合は、そちらを優先してください。
+
 ローカル Skill folder を読める agent には Skill package も用意されています。
 
 - Windows: `rhoiscribe-skill-windows-x86_64.zip`
@@ -31,8 +34,6 @@ cargo build --release
 ```
 
 ## パス
-
-ドキュメントやコミットする設定例では placeholder を使い、実際のパスは自分の private client configuration だけで置き換えてください。
 
 - `<RHOISCRIBE_COMMAND>`: `--print-command` が表示する絶対パス。
 - `<ABSOLUTE_PATH_TO_RHOISCRIBE>`: この repository または release folder の絶対パス。
@@ -167,15 +168,6 @@ Windows client では通常 `.exe` path が必要で、JSON 内の backslash も
 ```
 
 MCP server mode では、CWT language workspace を同じ process memory の中で温めておけます。直接 `--skill` でも同じ機能を呼び出せますが、各 command は短命な process なので、温めた CWT state は次の command には残りません。
-
-## 実行時の基本
-
-- Transport: stdio。
-- Runtime network: 不要です。
-- Prompts: `prompts/list` と `prompts/get` で利用できます。
-- Resources: `resources/list` と `resources/read` で利用できます。
-- Tools: `tools/list` と `tools/call` で利用できます。
-- 機能の詳細と推奨 workflow は [機能ガイド](features.ja.md) を参照してください。
 
 ## スモークテスト
 

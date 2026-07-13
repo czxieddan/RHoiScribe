@@ -219,6 +219,9 @@ jobs:
             echo "- Linux x86_64: \`rhoiscribe-linux-x86_64\`"
             echo "- macOS universal: \`rhoiscribe-macos-universal\`"
             echo
+            echo "> [!WARNING]"
+            echo "> The Skill package is still available for now, but it is no longer the recommended path for new language support. That support works best in a long-lived process that can stay warm; Skill runs as short-lived calls, so Skill support will be phased out gradually. Use the MCP server when your client can."
+            echo
             echo "Skill packages include \`SKILL.md\` and the matching executable:"
             echo
             echo "- Windows Skill package: \`rhoiscribe-skill-windows-x86_64.zip\`"

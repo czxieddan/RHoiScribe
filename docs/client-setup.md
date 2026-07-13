@@ -14,6 +14,9 @@ Download a prebuilt binary from [GitHub Releases](https://github.com/czxieddan/R
 - Linux: `rhoiscribe-linux-x86_64`
 - macOS: `rhoiscribe-macos-universal`
 
+> [!WARNING]
+> The Skill package is still available for now, but it is no longer the recommended path for new language support. That support works best in a long-lived process that can stay warm; Skill runs as short-lived calls, so Skill support will be phased out gradually. Use the MCP server when your client can.
+
 Skill packages are available for agents that can read a local Skill folder:
 
 - Windows: `rhoiscribe-skill-windows-x86_64.zip`
@@ -31,8 +34,6 @@ cargo build --release
 ```
 
 ## Paths
-
-Use placeholders in docs and committed examples. Replace them only in your private client configuration:
 
 - `<RHOISCRIBE_COMMAND>`: absolute path printed by `--print-command`.
 - `<ABSOLUTE_PATH_TO_RHOISCRIBE>`: absolute path to this repository or release folder on the user's machine.
@@ -167,15 +168,6 @@ Direct Skill commands return JSON and expose the same prompts, resources, and to
 ```
 
 MCP server mode keeps CWT language workspaces warm in process memory across tool calls. Direct `--skill` calls expose the same tools and resources, but each command is a short-lived process, so warm CWT state is rebuilt per command instead of reused.
-
-## Runtime Basics
-
-- Transport: stdio.
-- Network: no runtime network access is required.
-- Prompts: available through `prompts/list` and `prompts/get`.
-- Resources: available through `resources/list` and `resources/read`.
-- Tools: available through `tools/list` and `tools/call`.
-- Feature details and recommended workflows: [features.md](features.md).
 
 ## Smoke Test
 
