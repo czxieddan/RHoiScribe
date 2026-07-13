@@ -182,7 +182,7 @@ fn concurrent_page_key(path: &Path) -> Result<PageCryptoKey, String> {
 
 fn write_new_page_key(path: &Path, bytes: &[u8; 32]) -> std::io::Result<()> {
     let mut file = new_key_file(path)?;
-    file.write_all(encode_hex_key(bytes).as_bytes())?;
+    file.write_all(hex::encode(bytes).as_bytes())?;
     file.write_all(b"\n")?;
     secure_key_permissions(&file)?;
     file.sync_all()
@@ -208,23 +208,6 @@ fn secure_key_permissions(file: &File) -> std::io::Result<()> {
 #[cfg(not(unix))]
 fn secure_key_permissions(_file: &File) -> std::io::Result<()> {
     Ok(())
-}
-
-fn encode_hex_key(bytes: &[u8; 32]) -> String {
-    let mut output = String::with_capacity(64);
-    for byte in bytes {
-        output.push(nibble_to_hex(byte >> 4));
-        output.push(nibble_to_hex(byte & 0x0f));
-    }
-    output
-}
-
-fn nibble_to_hex(value: u8) -> char {
-    match value {
-        0..=9 => char::from(b'0' + value),
-        10..=15 => char::from(b'a' + value - 10),
-        _ => '?',
-    }
 }
 
 pub(crate) struct StateMutationLock {
@@ -268,11 +251,15 @@ impl StateMutationLock {
                 clean_display_path(store_path)
             )
         })?;
-        self.bind_database_identity(identity)
+        self.bind_database_identity(store_path, identity)
     }
 
-    fn bind_database_identity(&mut self, identity: same_file::Handle) -> Result<(), String> {
-        let (kind, key) = stable_identity_key(&identity)?;
+    fn bind_database_identity(
+        &mut self,
+        store_path: &Path,
+        identity: same_file::Handle,
+    ) -> Result<(), String> {
+        let (kind, key) = stable_identity_key(store_path, &identity)?;
         let lock_key = format!("{kind}:{key}");
         if self
             .database_identities
@@ -360,7 +347,10 @@ fn path_lock_bytes(path: &Path) -> Vec<u8> {
 }
 
 #[cfg(unix)]
-fn stable_identity_key(identity: &same_file::Handle) -> Result<(&'static str, String), String> {
+fn stable_identity_key(
+    _store_path: &Path,
+    identity: &same_file::Handle,
+) -> Result<(&'static str, String), String> {
     Ok((
         "file-v1-unix",
         format!("{:016x}-{:016x}", identity.dev(), identity.ino()),
@@ -368,39 +358,37 @@ fn stable_identity_key(identity: &same_file::Handle) -> Result<(&'static str, St
 }
 
 #[cfg(windows)]
-fn stable_identity_key(identity: &same_file::Handle) -> Result<(&'static str, String), String> {
-    use std::{mem::size_of, os::windows::io::AsRawHandle};
-    use windows_sys::Win32::Storage::FileSystem::{
-        FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx,
-    };
-
-    let mut information = FILE_ID_INFO::default();
-    let found = unsafe {
-        GetFileInformationByHandleEx(
-            identity.as_file().as_raw_handle(),
-            FileIdInfo,
-            std::ptr::from_mut(&mut information).cast(),
-            size_of::<FILE_ID_INFO>() as u32,
+fn stable_identity_key(
+    store_path: &Path,
+    _identity: &same_file::Handle,
+) -> Result<(&'static str, String), String> {
+    let identity = file_id::get_high_res_file_id(store_path).map_err(|error| {
+        format!(
+            "failed to read stable state database identity at {}: {error}",
+            clean_display_path(store_path)
         )
+    })?;
+    let file_id::FileId::HighRes {
+        volume_serial_number,
+        file_id,
+    } = identity
+    else {
+        return Err("stable state database identity was not high resolution".to_string());
     };
-    if found == 0 {
-        return Err(format!(
-            "failed to read stable state database identity: {}",
-            std::io::Error::last_os_error()
-        ));
-    }
     Ok((
         "file-v1-windows",
         format!(
-            "{:016x}-{}",
-            information.VolumeSerialNumber,
-            hex::encode(information.FileId.Identifier)
+            "{volume_serial_number:016x}-{}",
+            hex::encode(file_id.to_le_bytes())
         ),
     ))
 }
 
 #[cfg(not(any(unix, windows)))]
-fn stable_identity_key(_identity: &same_file::Handle) -> Result<(&'static str, String), String> {
+fn stable_identity_key(
+    _store_path: &Path,
+    _identity: &same_file::Handle,
+) -> Result<(&'static str, String), String> {
     Err("stable state database identity locks are unsupported on this platform".to_string())
 }
 

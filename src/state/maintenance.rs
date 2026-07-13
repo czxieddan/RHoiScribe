@@ -26,7 +26,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rnmdb_catalog::{CatalogCodec, Column, Table};
+use rnmdb_catalog::{Catalog, CatalogCodec, Column, Table};
 use rnmdb_executor::{
     durable::{DurableExecutorImage, DurableTableRows, read_image_from_single_file_backend},
     row::RowCodec,
@@ -175,15 +175,32 @@ fn open_sql_backend(path: &Path, key: PageCryptoKey) -> Result<(SingleFileBacken
 }
 
 fn read_state_metadata(path: &Path, backend: &SingleFileBackend) -> Result<StateMetadata, String> {
+    let image = read_durable_image(path, backend)?;
+    let catalog = decode_catalog(path, &image)?;
+    let table = state_metadata_table(path, &catalog)?;
+    let durable_rows = metadata_durable_rows(path, &image)?;
+    decode_state_metadata(path, table, durable_rows)
+}
+
+fn read_durable_image(
+    path: &Path,
+    backend: &SingleFileBackend,
+) -> Result<DurableExecutorImage, String> {
     let bytes = read_image_from_single_file_backend(backend)
         .map_err(|error| state_database_error(path, "query", error.to_string()))?;
     let bytes = bytes
         .ok_or_else(|| state_database_error(path, "query", "durable RNMDB SQL image is missing"))?;
-    let image = DurableExecutorImage::decode(&bytes)
-        .map_err(|error| state_database_error(path, "query", error.to_string()))?;
-    let catalog = CatalogCodec::decode(image.catalog())
-        .map_err(|error| state_database_error(path, "query", error.to_string()))?;
-    let table = catalog
+    DurableExecutorImage::decode(&bytes)
+        .map_err(|error| state_database_error(path, "query", error.to_string()))
+}
+
+fn decode_catalog(path: &Path, image: &DurableExecutorImage) -> Result<Catalog, String> {
+    CatalogCodec::decode(image.catalog())
+        .map_err(|error| state_database_error(path, "query", error.to_string()))
+}
+
+fn state_metadata_table<'a>(path: &Path, catalog: &'a Catalog) -> Result<&'a Table, String> {
+    catalog
         .get_table("public", "state_metadata")
         .ok_or_else(|| {
             state_database_error(
@@ -191,9 +208,7 @@ fn read_state_metadata(path: &Path, backend: &SingleFileBackend) -> Result<State
                 "query",
                 "state_metadata table is missing from the catalog",
             )
-        })?;
-    let durable_rows = metadata_durable_rows(path, &image)?;
-    decode_state_metadata(path, table, durable_rows)
+        })
 }
 
 fn metadata_durable_rows<'a>(

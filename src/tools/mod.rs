@@ -700,7 +700,8 @@ impl ToolCatalog {
         arguments: Value,
         result: &Result<CallToolResult, ToolError>,
     ) -> Result<Option<String>, ToolError> {
-        if state_maintenance::is_state_maintenance_tool(name)
+        if name == "query_tool_logs"
+            || state_maintenance::is_state_maintenance_tool(name)
             || cwt_diagnostics::should_skip_tool_log(name, &arguments)
             || cwt_intelligence::is_cwt_intelligence_tool(name)
             || cwt_localisation::is_cwt_localisation_tool(name)
