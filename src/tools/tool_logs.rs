@@ -31,8 +31,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::state::{
-    RnmdbStateStore, StateMutationLock, StateScope, StoredToolLogFilter, StoredToolLogRecord,
-    StoredToolLogSearchRow, clean_display_path, state_database_error,
+    RnmdbStateStore, StateScope, StoredToolLogFilter, StoredToolLogRecord, StoredToolLogSearchRow,
+    clean_display_path, state_database_error,
 };
 
 use super::preferences::preference_store_path;
@@ -144,7 +144,13 @@ struct SelectedToolLogs {
     migration_message: Option<String>,
 }
 
-pub(crate) fn tool_log_store_path_from_arguments(arguments: &Map<String, Value>) -> Option<String> {
+pub(crate) fn tool_log_store_path_from_arguments(
+    tool_name: &str,
+    arguments: &Map<String, Value>,
+) -> Option<String> {
+    if tool_name == "launch_hoi4_debug_with_rchadow" {
+        return None;
+    }
     arguments
         .get("store_path")
         .and_then(Value::as_str)
@@ -157,7 +163,6 @@ pub(crate) fn record_tool_call(
 ) -> Result<Option<String>, String> {
     let store_path = preference_store_path(store_path);
     let record = stored_log_record(append, &store_path)?;
-    let _lock = acquire_store_lock(&store_path)?;
     let mut store = RnmdbStateStore::open(&store_path)?;
     store.append_log(record, MAX_TOOL_LOG_ENTRIES)?;
     Ok(store
@@ -233,7 +238,6 @@ fn select_tool_logs(
 ) -> Result<SelectedToolLogs, String> {
     let validated = validate_log_selection(&input, default_limit)?;
     let store_path = preference_store_path(input.store_path);
-    let lock = acquire_store_lock(&store_path)?;
     let mut store = RnmdbStateStore::open(&store_path)?;
     let migration_message = store
         .take_migration_report()
@@ -241,7 +245,6 @@ fn select_tool_logs(
     let total_entries = store.count_logs()?;
     let rows = store.search_logs(&validated.filter)?;
     drop(store);
-    drop(lock);
     let mut entries = filter_and_rank_logs(rows, &validated, &store_path)?;
     let matched_entries = entries.len();
     sort_log_entries(&mut entries, validated.text_query.is_some());
@@ -366,7 +369,7 @@ fn sort_log_entries(entries: &mut [ToolLogEntry], ranked: bool) {
     if ranked {
         entries.sort_by(compare_ranked_logs);
     } else {
-        entries.sort_by(|left, right| right.sequence.cmp(&left.sequence));
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.sequence));
     }
 }
 
@@ -382,11 +385,6 @@ fn append_migration_message(messages: &mut Vec<String>, migration: Option<String
     if let Some(message) = migration {
         messages.push(message);
     }
-}
-
-fn acquire_store_lock(store_path: &Path) -> Result<StateMutationLock, String> {
-    StateMutationLock::acquire(store_path)
-        .map_err(|error| state_database_error(store_path, "open", error))
 }
 
 fn stored_log_record(
@@ -423,6 +421,7 @@ fn infer_log_scope(arguments: &Value) -> StateScope {
 fn inferred_mod_scope(arguments: &Map<String, Value>) -> Option<StateScope> {
     argument_mod_scope(arguments, "mod_root")
         .or_else(|| argument_mod_scope(arguments, "workspace_root"))
+        .or_else(|| argument_mod_scope(arguments, "workspace_mod_path"))
         .or_else(|| roots_mod_scope(arguments.get("roots")))
 }
 

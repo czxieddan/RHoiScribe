@@ -29,9 +29,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::state::{
-    GLOBAL_SCOPE_KIND, MOD_SCOPE_KIND, RnmdbStateStore, StateMutationLock, StateScope,
-    StoredPreferenceRecord, clean_display_path, preference_record_key, state_database_error,
-    state_store_path,
+    GLOBAL_SCOPE_KIND, MOD_SCOPE_KIND, RnmdbStateStore, StateScope, StoredPreferenceRecord,
+    clean_display_path, preference_record_key, state_database_error, state_store_path,
 };
 
 const BACKEND_NAME: &str = "RNMDB single-file page store";
@@ -110,7 +109,6 @@ pub fn list_agent_preferences(
 ) -> Result<AgentPreferencesResult, String> {
     let scope = StateScope::from_mod_root(request.mod_root.as_deref())?;
     let store_path = preference_store_path(request.store_path.as_deref());
-    let _lock = acquire_store_lock(&store_path)?;
     let mut store = RnmdbStateStore::open(&store_path)?;
     let migration_message = take_migration_message(&mut store);
     let views = preference_views(&mut store, &scope, &store_path)?;
@@ -134,7 +132,6 @@ pub fn set_agent_preference(
     let scope = StateScope::from_mod_root(request.mod_root.as_deref())?;
     let key = normalized_preference_key(&request.key)?;
     let store_path = preference_store_path(request.store_path.as_deref());
-    let _lock = acquire_store_lock(&store_path)?;
     let mut store = RnmdbStateStore::open(&store_path)?;
     let migration_message = take_migration_message(&mut store);
     let record = stored_preference(&scope, &key, &request.value, &store_path)?;
@@ -163,7 +160,6 @@ pub fn delete_agent_preference(
     let scope = StateScope::from_mod_root(request.mod_root.as_deref())?;
     let key = normalized_preference_key(&request.key)?;
     let store_path = preference_store_path(request.store_path.as_deref());
-    let _lock = acquire_store_lock(&store_path)?;
     let mut store = RnmdbStateStore::open(&store_path)?;
     let migration_message = take_migration_message(&mut store);
     let records = store.list_preferences(&scope)?;
@@ -190,11 +186,6 @@ pub(crate) fn preference_store_path(store_path: Option<&str>) -> PathBuf {
 
 pub(crate) fn is_state_database_error(error: &str) -> bool {
     crate::state::is_state_database_error(error)
-}
-
-fn acquire_store_lock(store_path: &std::path::Path) -> Result<StateMutationLock, String> {
-    StateMutationLock::acquire(store_path)
-        .map_err(|error| state_database_error(store_path, "open", error))
 }
 
 fn take_migration_message(store: &mut RnmdbStateStore) -> Option<String> {

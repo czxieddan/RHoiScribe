@@ -26,13 +26,20 @@ use rnmdb_common::ids::PageId;
 use rnmdb_storage::{Page, PageSize, SingleFileBackend, SingleFileOptions, StorageBackend};
 
 pub(crate) use crate::state::path::{clean_display_path, default_rhoiscribe_dir};
-use crate::state::path::{ensure_parent, page_crypto_key};
+use crate::state::{
+    StateMutationLock,
+    legacy::is_legacy_state_page,
+    path::{
+        LEGACY_STATE_DATABASE_FILE_NAME, STATE_DATABASE_FILE_NAME, ensure_parent, page_crypto_key,
+    },
+};
 
 pub(crate) const DEFAULT_RNMDB_PAGE_SIZE_BYTES: usize = 16 * 1024;
 
 pub(crate) struct RnmdbSingleFilePageStore {
     backend: SingleFileBackend,
     page_size_bytes: usize,
+    _mutation_lock: StateMutationLock,
 }
 
 impl RnmdbSingleFilePageStore {
@@ -41,10 +48,15 @@ impl RnmdbSingleFilePageStore {
     }
 
     fn open_or_create_current(path: &Path, page_size_bytes: usize) -> Result<Self, String> {
+        reject_state_store_name(path)?;
+        let mut mutation_lock = StateMutationLock::acquire(path)?;
         ensure_parent(path)?;
         let page_key = page_crypto_key()?;
         let backend = if path.exists() {
-            SingleFileBackend::open_with_key(path, page_key).map_err(|error| error.to_string())?
+            let backend = SingleFileBackend::open_with_key(path, page_key)
+                .map_err(|error| error.to_string())?;
+            reject_rhoiscribe_state_backend(path, &backend)?;
+            backend
         } else {
             SingleFileBackend::create(
                 path,
@@ -52,11 +64,13 @@ impl RnmdbSingleFilePageStore {
             )
             .map_err(|error| error.to_string())?
         };
+        mutation_lock.bind_existing_database(path)?;
         let page_size_bytes = backend.page_size().bytes();
 
         Ok(Self {
             backend,
             page_size_bytes,
+            _mutation_lock: mutation_lock,
         })
     }
 
@@ -82,6 +96,47 @@ impl RnmdbSingleFilePageStore {
             .and_then(|_| self.backend.sync().map(|_| ()))
             .map_err(|error| error.to_string())
     }
+}
+
+fn reject_state_store_name(path: &Path) -> Result<(), String> {
+    let reserved = path.file_name().is_some_and(|name| {
+        let name = name.to_string_lossy();
+        name.eq_ignore_ascii_case(STATE_DATABASE_FILE_NAME)
+            || name.eq_ignore_ascii_case(LEGACY_STATE_DATABASE_FILE_NAME)
+    });
+    if reserved {
+        return Err(format!(
+            "Rchadow page storage must not use the RHoiScribe state database path {}",
+            clean_display_path(path)
+        ));
+    }
+    Ok(())
+}
+
+fn reject_rhoiscribe_state_backend(path: &Path, backend: &SingleFileBackend) -> Result<(), String> {
+    let is_state = backend.catalog_root().is_some() || has_state_pages(backend)?;
+    if is_state {
+        return Err(format!(
+            "Rchadow page storage refuses RHoiScribe state database {}",
+            clean_display_path(path)
+        ));
+    }
+    Ok(())
+}
+
+fn has_state_pages(backend: &SingleFileBackend) -> Result<bool, String> {
+    for page_id in [1_u64, 2_u64] {
+        let page = backend
+            .read_page(PageId::new(page_id))
+            .map_err(|error| error.to_string())?;
+        if page.as_ref().is_some_and(|page| {
+            (page_id == 1 && page.payload().starts_with(b"RNOVSI01"))
+                || is_legacy_state_page(page_id, page.payload())
+        }) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 impl RnmdbPageStore for RnmdbSingleFilePageStore {

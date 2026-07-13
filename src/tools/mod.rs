@@ -710,7 +710,7 @@ impl ToolCatalog {
 
         let store_path = arguments
             .as_object()
-            .and_then(tool_logs::tool_log_store_path_from_arguments);
+            .and_then(|arguments| tool_logs::tool_log_store_path_from_arguments(name, arguments));
         let (success, result, error) = tool_log_outcome(result);
         tool_logs::record_tool_call(
             store_path.as_deref(),

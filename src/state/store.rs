@@ -22,13 +22,14 @@
 use std::path::{Path, PathBuf};
 
 use rnmdb_cli::{CommandOutput, LocalSession};
+use rnmdb_storage::PageCryptoKey;
 use rnmdb_types::SqlValue;
 use serde_json::Value;
 
 use super::{
     RNMDB_REVISION, STATE_SCHEMA_VERSION, StateMigrationReport, StateScope, StoredPreferenceRecord,
     StoredToolLogFilter, StoredToolLogRecord, StoredToolLogSearchRow, legacy,
-    path::{clean_display_path, ensure_parent, page_crypto_key},
+    path::{StateMutationLock, clean_display_path, ensure_parent, page_crypto_key},
     scope::validate_stored_scope,
     state_database_error, stored_preference_record_key,
 };
@@ -51,30 +52,75 @@ pub(crate) struct RnmdbStateStore {
     canonical_path: PathBuf,
     migration_report: Option<StateMigrationReport>,
     session: LocalSession,
+    _mutation_lock: Option<StateMutationLock>,
 }
 
 impl RnmdbStateStore {
     pub(crate) fn open(path: &Path) -> Result<Self, String> {
-        let migration_report = legacy::prepare_state_database(path)?;
-        let mut store = Self::open_ready(path, path)?;
+        let mut mutation_lock = StateMutationLock::acquire(path)
+            .map_err(|error| state_database_error(path, "open", error))?;
+        let migration_report = legacy::prepare_state_database(path, &mut mutation_lock)?;
+        mutation_lock
+            .bind_existing_database(path)
+            .map_err(|error| state_database_error(path, "open", error))?;
+        let mut store = Self::open_ready(path, path, Some(&mut mutation_lock))?;
         store.migration_report = migration_report;
+        store._mutation_lock = Some(mutation_lock);
         Ok(store)
     }
 
-    pub(super) fn create_migration(path: &Path, canonical_path: &Path) -> Result<Self, String> {
-        Self::open_ready(path, canonical_path)
+    pub(super) fn create_migration(
+        path: &Path,
+        canonical_path: &Path,
+        mutation_lock: &mut StateMutationLock,
+    ) -> Result<Self, String> {
+        Self::open_ready(path, canonical_path, Some(mutation_lock))
     }
 
-    fn open_ready(path: &Path, canonical_path: &Path) -> Result<Self, String> {
+    pub(super) fn open_existing_migration(
+        path: &Path,
+        canonical_path: &Path,
+        key: PageCryptoKey,
+        mutation_lock: &mut StateMutationLock,
+    ) -> Result<Self, String> {
+        mutation_lock
+            .bind_existing_database(path)
+            .map_err(|error| state_database_error(canonical_path, "open", error))?;
+        let session = LocalSession::single_file_with_key(path, key)
+            .map_err(|error| state_database_error(canonical_path, "open", error.to_string()))?;
+        mutation_lock
+            .bind_existing_database(path)
+            .map_err(|error| state_database_error(canonical_path, "open", error))?;
+        let mut store = Self {
+            canonical_path: canonical_path.to_path_buf(),
+            migration_report: None,
+            session,
+            _mutation_lock: None,
+        };
+        store.validate_schema_version()?;
+        Ok(store)
+    }
+
+    fn open_ready(
+        path: &Path,
+        canonical_path: &Path,
+        mutation_lock: Option<&mut StateMutationLock>,
+    ) -> Result<Self, String> {
         ensure_parent(path).map_err(|error| state_database_error(canonical_path, "open", error))?;
         let key = page_crypto_key()
             .map_err(|error| state_database_error(canonical_path, "open", error))?;
         let session = LocalSession::single_file_with_key(path, key)
             .map_err(|error| state_database_error(canonical_path, "open", error.to_string()))?;
+        if let Some(mutation_lock) = mutation_lock {
+            mutation_lock
+                .bind_existing_database(path)
+                .map_err(|error| state_database_error(canonical_path, "open", error))?;
+        }
         let mut store = Self {
             canonical_path: canonical_path.to_path_buf(),
             migration_report: None,
             session,
+            _mutation_lock: None,
         };
         store.ensure_schema()?;
         Ok(store)
@@ -185,6 +231,22 @@ impl RnmdbStateStore {
         self.verify_migration_identity(source_path, backup_path)
     }
 
+    pub(super) fn persist_migration_identity(
+        &mut self,
+        source_path: &Path,
+        backup_path: &Path,
+    ) -> Result<(), String> {
+        self.transaction("migrate", |store| {
+            store.set_migration_identity(source_path, backup_path)
+        })
+    }
+
+    pub(super) fn migration_identity(&mut self) -> Result<(PathBuf, PathBuf), String> {
+        let source = self.required_metadata_value(MIGRATION_SOURCE_METADATA)?;
+        let backup = self.required_metadata_value(MIGRATION_BACKUP_METADATA)?;
+        Ok((PathBuf::from(source), PathBuf::from(backup)))
+    }
+
     fn ensure_schema(&mut self) -> Result<(), String> {
         self.transaction("schema", |store| {
             store.execute_schema_statements()?;
@@ -291,6 +353,16 @@ impl RnmdbStateStore {
             .map(|row| required_text(row.values(), 0, "state_metadata.value"))
             .transpose()
             .map_err(|error| state_database_error(&self.canonical_path, "query", error))
+    }
+
+    fn required_metadata_value(&mut self, name: &str) -> Result<String, String> {
+        self.metadata_value(name)?.ok_or_else(|| {
+            state_database_error(
+                &self.canonical_path,
+                "recover",
+                format!("migration metadata {name} is missing"),
+            )
+        })
     }
 
     fn preference_rows(&mut self, sql: &str) -> Result<Vec<StoredPreferenceRecord>, String> {

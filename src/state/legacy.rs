@@ -21,7 +21,7 @@
 
 use std::{
     collections::BTreeMap,
-    fs,
+    fs, io,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -37,8 +37,11 @@ use serde_json::Value;
 
 use super::{
     GLOBAL_SCOPE_KEY, GLOBAL_SCOPE_KIND, StateMigrationReport, StoredPreferenceRecord,
-    StoredToolLogRecord, global_record_key,
-    path::{legacy_state_database_path, page_crypto_key, sync_parent_directory},
+    StoredToolLogRecord, global_record_key, is_state_database_error,
+    path::{
+        existing_page_crypto_key, legacy_state_database_path, page_crypto_key,
+        sync_parent_directory,
+    },
     state_database_error,
     store::RnmdbStateStore,
 };
@@ -48,6 +51,8 @@ const TOOL_LOG_INDEX_PAGE_ID: u64 = 2;
 const TOOL_LOG_DATA_START_PAGE_ID: u64 = 3;
 const SQL_FRAME_MAGIC: &[u8; 8] = b"RNOVSI01";
 const LEGACY_SCHEMA_VERSION: u32 = 1;
+const SQL_MIGRATION_LABEL: &str = "migrating-sql-v2";
+const FORMAT_UPGRADE_LABEL: &str = "legacy-format-upgrade";
 
 #[derive(Debug, Deserialize)]
 struct LegacyPreferences {
@@ -84,10 +89,24 @@ struct LegacySnapshot {
     logs: Vec<StoredToolLogRecord>,
 }
 
+struct MigrationTemporary {
+    path: PathBuf,
+}
+
+impl MigrationTemporary {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
 struct ReadableSource {
     original_path: PathBuf,
     readable_path: PathBuf,
-    temporary_upgrade: Option<PathBuf>,
+    temporary_upgrade: Option<MigrationTemporary>,
 }
 
 enum ExistingLayout {
@@ -95,34 +114,328 @@ enum ExistingLayout {
     Legacy(LegacySnapshot),
 }
 
+struct InterruptedMigration {
+    temporary_path: PathBuf,
+    backup_path: PathBuf,
+    retained_artifact_paths: Vec<PathBuf>,
+}
+
 pub(super) fn prepare_state_database(
     canonical_path: &Path,
+    mutation_lock: &mut super::path::StateMutationLock,
 ) -> Result<Option<StateMigrationReport>, String> {
-    let Some(source_path) = existing_source_path(canonical_path) else {
+    if let Some(report) = recover_interrupted_migration(canonical_path, mutation_lock)? {
+        return Ok(Some(report));
+    }
+    let Some(source_path) = existing_source_path(canonical_path)? else {
         return Ok(None);
     };
     let key =
         page_crypto_key().map_err(|error| state_database_error(canonical_path, "open", error))?;
-    let readable = prepare_readable_source(&source_path, canonical_path, key)?;
+    let readable = prepare_readable_source(&source_path, canonical_path, key, mutation_lock)?;
     let layout = match inspect_existing_layout(&readable.readable_path, canonical_path, key) {
         Ok(layout) => layout,
         Err(error) => return Err(clean_readable_source(&readable, canonical_path, error)),
     };
-    finish_existing_layout(readable, canonical_path, key, layout)
+    finish_existing_layout(readable, canonical_path, key, layout, mutation_lock)
 }
 
-fn existing_source_path(canonical_path: &Path) -> Option<PathBuf> {
-    if canonical_path.is_file() {
-        return Some(canonical_path.to_path_buf());
+fn recover_interrupted_migration(
+    canonical_path: &Path,
+    mutation_lock: &mut super::path::StateMutationLock,
+) -> Result<Option<StateMigrationReport>, String> {
+    if existing_source_path(canonical_path)?.is_some() {
+        return Ok(None);
+    }
+    let paths = interrupted_temporary_paths(canonical_path)?;
+    let existing = existing_paths(&paths, canonical_path)?;
+    if existing.is_empty() {
+        reject_backup_only_state(canonical_path)?;
+        return Ok(None);
+    }
+    let key = existing_page_crypto_key()
+        .map_err(|error| state_database_error(canonical_path, "recover", error))?;
+    let mut candidates = Vec::new();
+    let mut retained_artifacts = Vec::new();
+    for path in existing {
+        match interrupted_candidate(&path, canonical_path, key, mutation_lock)? {
+            Some(candidate) => candidates.push(candidate),
+            None => retained_artifacts.push(path),
+        }
+    }
+    let mut candidate = single_recovery_candidate(candidates, canonical_path)?;
+    candidate.retained_artifact_paths = retained_artifacts;
+    install_interrupted_migration(candidate, canonical_path, mutation_lock).map(Some)
+}
+
+fn reject_backup_only_state(canonical_path: &Path) -> Result<(), String> {
+    let backups = existing_backup_paths(canonical_path)?;
+    if backups.is_empty() {
+        return Ok(());
+    }
+    let paths = backups
+        .iter()
+        .map(|path| path.to_string_lossy())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(state_database_error(
+        canonical_path,
+        "recover",
+        format!(
+            "backup-only state requires explicit recovery before a new database can be created: {paths}"
+        ),
+    ))
+}
+
+fn existing_backup_paths(canonical_path: &Path) -> Result<Vec<PathBuf>, String> {
+    let parent = canonical_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let entries = fs::read_dir(parent)
+        .map_err(|error| state_database_error(canonical_path, "recover", error.to_string()))?;
+    let mut backups = Vec::new();
+    for entry in entries {
+        let entry = entry
+            .map_err(|error| state_database_error(canonical_path, "recover", error.to_string()))?;
+        let path = entry.path();
+        if is_backup_path(canonical_path, &path) {
+            backups.push(path);
+        }
+    }
+    backups.sort();
+    Ok(backups)
+}
+
+fn interrupted_temporary_paths(canonical_path: &Path) -> Result<[PathBuf; 2], String> {
+    Ok([
+        temporary_path(canonical_path, SQL_MIGRATION_LABEL)?,
+        temporary_path(canonical_path, FORMAT_UPGRADE_LABEL)?,
+    ])
+}
+
+fn existing_paths(paths: &[PathBuf], canonical_path: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut existing = Vec::new();
+    for path in paths {
+        if path_entry_exists(path)
+            .map_err(|error| state_database_error(canonical_path, "recover", error))?
+        {
+            existing.push(path.clone());
+        }
+    }
+    Ok(existing)
+}
+
+fn interrupted_candidate(
+    temporary_path: &Path,
+    canonical_path: &Path,
+    key: PageCryptoKey,
+    mutation_lock: &mut super::path::StateMutationLock,
+) -> Result<Option<InterruptedMigration>, String> {
+    validate_temporary_path(temporary_path, canonical_path, "recover")?;
+    mutation_lock
+        .bind_existing_database(temporary_path)
+        .map_err(|error| state_database_error(canonical_path, "recover", error))?;
+    verify_authenticated(temporary_path, canonical_path, key)?;
+    match inspect_existing_layout(temporary_path, canonical_path, key)? {
+        ExistingLayout::Legacy(_) => Ok(None),
+        ExistingLayout::Sql => {
+            let mut store = RnmdbStateStore::open_existing_migration(
+                temporary_path,
+                canonical_path,
+                key,
+                mutation_lock,
+            )?;
+            let (source_path, backup_path) = store.migration_identity()?;
+            drop(store);
+            validate_interrupted_paths(
+                canonical_path,
+                &source_path,
+                &backup_path,
+                key,
+                mutation_lock,
+            )?;
+            Ok(Some(InterruptedMigration {
+                temporary_path: temporary_path.to_path_buf(),
+                backup_path,
+                retained_artifact_paths: Vec::new(),
+            }))
+        }
+    }
+}
+
+fn single_recovery_candidate(
+    mut candidates: Vec<InterruptedMigration>,
+    canonical_path: &Path,
+) -> Result<InterruptedMigration, String> {
+    if candidates.len() == 1 {
+        return Ok(candidates.remove(0));
+    }
+    Err(state_database_error(
+        canonical_path,
+        "recover",
+        format!(
+            "expected exactly one authenticated interrupted migration, found {}",
+            candidates.len()
+        ),
+    ))
+}
+
+fn validate_interrupted_paths(
+    canonical_path: &Path,
+    source_path: &Path,
+    backup_path: &Path,
+    key: PageCryptoKey,
+    mutation_lock: &mut super::path::StateMutationLock,
+) -> Result<(), String> {
+    let legacy_path = legacy_state_database_path(canonical_path);
+    if !paths_match(source_path, canonical_path) && !paths_match(source_path, &legacy_path) {
+        return Err(state_database_error(
+            canonical_path,
+            "recover",
+            "migration source metadata does not name the canonical or legacy state path",
+        ));
+    }
+    reject_existing_target(canonical_path, source_path, "recover")?;
+    validate_backup_path(canonical_path, backup_path)?;
+    mutation_lock
+        .bind_existing_database(backup_path)
+        .map_err(|error| state_database_error(canonical_path, "recover", error))?;
+    verify_recovery_backup(backup_path, canonical_path, key)
+}
+
+fn verify_recovery_backup(
+    backup_path: &Path,
+    canonical_path: &Path,
+    key: PageCryptoKey,
+) -> Result<(), String> {
+    let report = verify_single_file_with_key(backup_path, key)
+        .map_err(|error| state_database_error(canonical_path, "recover", error.to_string()))?;
+    if report.encryption_authenticated()
+        && report.authenticated_page_records() == report.present_page_records()
+    {
+        return Ok(());
+    }
+    Err(state_database_error(
+        canonical_path,
+        "recover",
+        "migration backup did not authenticate every stored page",
+    ))
+}
+
+fn validate_backup_path(canonical_path: &Path, backup_path: &Path) -> Result<(), String> {
+    if !is_backup_path(canonical_path, backup_path) {
+        return Err(state_database_error(
+            canonical_path,
+            "recover",
+            "migration backup metadata is outside the expected sibling namespace",
+        ));
+    }
+    let metadata = path_entry_metadata(backup_path)
+        .map_err(|error| state_database_error(canonical_path, "recover", error))?
+        .ok_or_else(|| {
+            state_database_error(canonical_path, "recover", "migration backup is missing")
+        })?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(state_database_error(
+            canonical_path,
+            "recover",
+            "migration backup must be a regular file",
+        ));
+    }
+    Ok(())
+}
+
+fn is_backup_path(canonical_path: &Path, backup_path: &Path) -> bool {
+    let expected_parent = canonical_path.parent().unwrap_or_else(|| Path::new(""));
+    let backup_parent = backup_path.parent().unwrap_or_else(|| Path::new(""));
+    let Some(stem) = canonical_path.file_stem() else {
+        return false;
+    };
+    let prefix = format!("{}.pre-sql-v2", stem.to_string_lossy());
+    let name = backup_path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_default();
+    let valid_name = name == format!("{prefix}.rnmdb")
+        || (name.starts_with(&format!("{prefix}.")) && name.ends_with(".rnmdb"));
+    paths_match(expected_parent, backup_parent) && valid_name
+}
+
+fn install_interrupted_migration(
+    candidate: InterruptedMigration,
+    canonical_path: &Path,
+    mutation_lock: &mut super::path::StateMutationLock,
+) -> Result<StateMigrationReport, String> {
+    validate_temporary_path(&candidate.temporary_path, canonical_path, "recover")?;
+    mutation_lock
+        .bind_existing_database(&candidate.temporary_path)
+        .map_err(|error| state_database_error(canonical_path, "recover", error))?;
+    reject_existing_target(canonical_path, canonical_path, "recover")?;
+    rename_no_replace(&candidate.temporary_path, canonical_path)
+        .map_err(|error| state_database_error(canonical_path, "recover", error.to_string()))?;
+    sync_parent_directory(canonical_path)
+        .map_err(|error| state_database_error(canonical_path, "recover", error))?;
+    Ok(StateMigrationReport {
+        retained_backup_path: candidate.backup_path,
+        retained_artifact_paths: candidate.retained_artifact_paths,
+    })
+}
+
+fn validate_temporary_path(path: &Path, canonical_path: &Path, stage: &str) -> Result<(), String> {
+    let metadata = path_entry_metadata(path)
+        .map_err(|error| state_database_error(canonical_path, stage, error))?
+        .ok_or_else(|| {
+            state_database_error(canonical_path, stage, "migration temporary is missing")
+        })?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(state_database_error(
+            canonical_path,
+            stage,
+            format!(
+                "migration temporary {} must be a regular file",
+                path.to_string_lossy()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn existing_source_path(canonical_path: &Path) -> Result<Option<PathBuf>, String> {
+    if source_path_candidate(canonical_path, canonical_path)? {
+        return Ok(Some(canonical_path.to_path_buf()));
     }
     let legacy_path = legacy_state_database_path(canonical_path);
-    legacy_path.is_file().then_some(legacy_path)
+    if source_path_candidate(&legacy_path, canonical_path)? {
+        return Ok(Some(legacy_path));
+    }
+    Ok(None)
+}
+
+fn source_path_candidate(path: &Path, canonical_path: &Path) -> Result<bool, String> {
+    let Some(metadata) = path_entry_metadata(path)
+        .map_err(|error| state_database_error(canonical_path, "open", error))?
+    else {
+        return Ok(false);
+    };
+    if metadata.file_type().is_symlink() {
+        return Err(state_database_error(
+            canonical_path,
+            "open",
+            format!(
+                "state database source {} must not be a symbolic link",
+                path.to_string_lossy()
+            ),
+        ));
+    }
+    Ok(metadata.file_type().is_file())
 }
 
 fn prepare_readable_source(
     source_path: &Path,
     canonical_path: &Path,
     key: PageCryptoKey,
+    mutation_lock: &mut super::path::StateMutationLock,
 ) -> Result<ReadableSource, String> {
     let compatibility = check_single_file_format_compatibility(source_path)
         .map_err(|error| state_database_error(canonical_path, "open", error.to_string()))?;
@@ -133,7 +446,7 @@ fn prepare_readable_source(
             temporary_upgrade: None,
         }),
         SingleFileFormatCompatibilityStatus::UnsupportedOlder => {
-            upgrade_legacy_format(source_path, canonical_path, key)
+            upgrade_legacy_format(source_path, canonical_path, key, mutation_lock)
         }
         SingleFileFormatCompatibilityStatus::UnsupportedNewer => Err(state_database_error(
             canonical_path,
@@ -147,23 +460,29 @@ fn upgrade_legacy_format(
     source_path: &Path,
     canonical_path: &Path,
     key: PageCryptoKey,
+    mutation_lock: &mut super::path::StateMutationLock,
 ) -> Result<ReadableSource, String> {
-    let target = unique_temporary_path(canonical_path, "legacy-format-upgrade")?;
+    let target = temporary_path(canonical_path, FORMAT_UPGRADE_LABEL)?;
     reject_existing_target(canonical_path, &target, "migrate")?;
     if let Err(error) = upgrade_single_file_with_key(source_path, &target, key) {
         let error = state_database_error(canonical_path, "migrate", error.to_string());
-        return Err(clean_created_migration(&target, canonical_path, error));
+        return Err(retain_unowned_migration(&target, canonical_path, error));
     }
+    validate_temporary_path(&target, canonical_path, "migrate")?;
+    mutation_lock
+        .bind_existing_database(&target)
+        .map_err(|error| state_database_error(canonical_path, "migrate", error))?;
+    let temporary = MigrationTemporary::new(target.clone());
     if let Err(error) = verify_authenticated(&target, canonical_path, key) {
-        return Err(clean_created_migration(&target, canonical_path, error));
+        return Err(retain_created_migration(&temporary, canonical_path, error));
     }
     if let Err(error) = sync_verified_temporary(&target, canonical_path) {
-        return Err(clean_created_migration(&target, canonical_path, error));
+        return Err(retain_created_migration(&temporary, canonical_path, error));
     }
     Ok(ReadableSource {
         original_path: source_path.to_path_buf(),
-        readable_path: target.clone(),
-        temporary_upgrade: Some(target),
+        readable_path: target,
+        temporary_upgrade: Some(temporary),
     })
 }
 
@@ -198,12 +517,26 @@ fn finish_existing_layout(
     canonical_path: &Path,
     key: PageCryptoKey,
     layout: ExistingLayout,
+    mutation_lock: &mut super::path::StateMutationLock,
 ) -> Result<Option<StateMigrationReport>, String> {
     match layout {
-        ExistingLayout::Sql => finish_existing_sql(readable, canonical_path, key),
+        ExistingLayout::Sql => finish_existing_sql(readable, canonical_path, key, mutation_lock),
         ExistingLayout::Legacy(snapshot) => {
-            remove_temporary_upgrade(&readable, canonical_path)?;
-            migrate_snapshot(&readable.original_path, canonical_path, key, snapshot)
+            let retained = readable
+                .temporary_upgrade
+                .as_ref()
+                .map(|temporary| temporary.path().to_path_buf());
+            let mut report = migrate_snapshot(
+                &readable.original_path,
+                canonical_path,
+                key,
+                snapshot,
+                mutation_lock,
+            )?;
+            if let (Some(report), Some(path)) = (&mut report, retained) {
+                report.retained_artifact_paths.push(path);
+            }
+            Ok(report)
         }
     }
 }
@@ -212,22 +545,28 @@ fn finish_existing_sql(
     readable: ReadableSource,
     canonical_path: &Path,
     key: PageCryptoKey,
+    mutation_lock: &mut super::path::StateMutationLock,
 ) -> Result<Option<StateMigrationReport>, String> {
     if let Err(error) = verify_authenticated(&readable.readable_path, canonical_path, key) {
         return Err(clean_readable_source(&readable, canonical_path, error));
     }
-    if readable.readable_path != readable.original_path {
+    if let Some(temporary) = &readable.temporary_upgrade {
         let backup = match unique_backup_path(canonical_path) {
             Ok(path) => path,
             Err(error) => return Err(clean_readable_source(&readable, canonical_path, error)),
         };
-        return swap_database(
+        if let Err(error) = prepare_swap_identity(
+            temporary.path(),
             &readable.original_path,
-            &readable.readable_path,
             &backup,
             canonical_path,
-        )
-        .map(Some);
+            key,
+            mutation_lock,
+        ) {
+            return Err(retain_created_migration(temporary, canonical_path, error));
+        }
+        return swap_database(&readable.original_path, temporary, &backup, canonical_path)
+            .map(Some);
     }
     if readable.original_path != canonical_path {
         promote_legacy_name(&readable.original_path, canonical_path)?;
@@ -235,9 +574,30 @@ fn finish_existing_sql(
     Ok(None)
 }
 
+fn prepare_swap_identity(
+    temporary_path: &Path,
+    source_path: &Path,
+    backup_path: &Path,
+    canonical_path: &Path,
+    key: PageCryptoKey,
+    mutation_lock: &mut super::path::StateMutationLock,
+) -> Result<(), String> {
+    validate_temporary_path(temporary_path, canonical_path, "migrate")?;
+    let mut store = RnmdbStateStore::open_existing_migration(
+        temporary_path,
+        canonical_path,
+        key,
+        mutation_lock,
+    )?;
+    store.persist_migration_identity(source_path, backup_path)?;
+    drop(store);
+    verify_authenticated(temporary_path, canonical_path, key)?;
+    sync_verified_temporary(temporary_path, canonical_path)
+}
+
 fn promote_legacy_name(source: &Path, canonical_path: &Path) -> Result<(), String> {
     reject_existing_target(canonical_path, canonical_path, "swap")?;
-    fs::rename(source, canonical_path)
+    rename_no_replace(source, canonical_path)
         .map_err(|error| state_database_error(canonical_path, "swap", error.to_string()))?;
     if let Err(error) = sync_parent_directory(canonical_path) {
         return restore_legacy_name(source, canonical_path, error);
@@ -250,7 +610,7 @@ fn restore_legacy_name(
     canonical_path: &Path,
     failure: String,
 ) -> Result<(), String> {
-    let restore = match fs::rename(canonical_path, source) {
+    let restore = match rename_no_replace(canonical_path, source) {
         Ok(()) => directory_sync_status(source),
         Err(error) => format!("restore failed: {error}"),
     };
@@ -431,6 +791,26 @@ where
         .map_err(|error| format!("failed to decode legacy {label}: {error}"))
 }
 
+pub(crate) fn is_legacy_state_page(page_id: u64, payload: &[u8]) -> bool {
+    let Ok(Some(Value::Object(object))) =
+        decode_length_prefixed::<Value>(payload, "state classifier")
+    else {
+        return false;
+    };
+    let has_schema = object.get("schema_version").is_some_and(Value::is_u64);
+    match page_id {
+        PREFERENCES_PAGE_ID => {
+            has_schema && object.get("preferences").is_some_and(Value::is_object)
+        }
+        TOOL_LOG_INDEX_PAGE_ID => {
+            has_schema
+                && object.get("byte_len").is_some_and(Value::is_u64)
+                && object.get("page_count").is_some_and(Value::is_u64)
+        }
+        _ => false,
+    }
+}
+
 fn validate_legacy_schema(version: u32, label: &str) -> Result<(), String> {
     if version <= LEGACY_SCHEMA_VERSION {
         return Ok(());
@@ -445,40 +825,45 @@ fn migrate_snapshot(
     canonical_path: &Path,
     key: PageCryptoKey,
     snapshot: LegacySnapshot,
+    mutation_lock: &mut super::path::StateMutationLock,
 ) -> Result<Option<StateMigrationReport>, String> {
     let backup_path = unique_backup_path(canonical_path)?;
-    let migration_path = unique_temporary_path(canonical_path, "migrating-sql-v2")?;
+    let migration_path = temporary_path(canonical_path, SQL_MIGRATION_LABEL)?;
     reject_existing_target(canonical_path, &migration_path, "migrate")?;
-    reserve_migration_database(&migration_path, canonical_path, key)?;
+    let migration =
+        reserve_migration_database(&migration_path, canonical_path, key, mutation_lock)?;
     let build_result = build_migration_database(
-        &migration_path,
+        migration.path(),
         canonical_path,
         &backup_path,
         source_path,
         key,
         &snapshot,
+        mutation_lock,
     );
     if let Err(error) = build_result {
-        return Err(clean_created_migration(
-            &migration_path,
-            canonical_path,
-            error,
-        ));
+        return Err(retain_created_migration(&migration, canonical_path, error));
     }
-    swap_database(source_path, &migration_path, &backup_path, canonical_path).map(Some)
+    swap_database(source_path, &migration, &backup_path, canonical_path).map(Some)
 }
 
 fn reserve_migration_database(
     migration_path: &Path,
     canonical_path: &Path,
     key: PageCryptoKey,
-) -> Result<(), String> {
+    mutation_lock: &mut super::path::StateMutationLock,
+) -> Result<MigrationTemporary, String> {
     SingleFileBackend::create(
         migration_path,
         SingleFileOptions::default().with_page_key(key),
     )
     .map(drop)
-    .map_err(|error| state_database_error(canonical_path, "migrate", error.to_string()))
+    .map_err(|error| state_database_error(canonical_path, "migrate", error.to_string()))?;
+    validate_temporary_path(migration_path, canonical_path, "migrate")?;
+    mutation_lock
+        .bind_existing_database(migration_path)
+        .map_err(|error| state_database_error(canonical_path, "migrate", error))?;
+    Ok(MigrationTemporary::new(migration_path.to_path_buf()))
 }
 
 fn build_migration_database(
@@ -488,8 +873,10 @@ fn build_migration_database(
     source_path: &Path,
     key: PageCryptoKey,
     snapshot: &LegacySnapshot,
+    mutation_lock: &mut super::path::StateMutationLock,
 ) -> Result<(), String> {
-    let mut store = RnmdbStateStore::create_migration(migration_path, canonical_path)?;
+    let mut store =
+        RnmdbStateStore::create_migration(migration_path, canonical_path, mutation_lock)?;
     store.import_legacy(
         &snapshot.preferences,
         &snapshot.logs,
@@ -507,15 +894,28 @@ fn build_migration_database(
     sync_verified_temporary(migration_path, canonical_path)
 }
 
-fn clean_created_migration(path: &Path, canonical_path: &Path, error: String) -> String {
-    match cleanup_temporary(path) {
-        Ok(()) => error,
-        Err(cleanup) => state_database_error(
-            canonical_path,
-            "migrate",
-            format!("{error}; failed to remove incomplete migration database: {cleanup}"),
-        ),
+fn retain_created_migration(
+    temporary: &MigrationTemporary,
+    canonical_path: &Path,
+    error: String,
+) -> String {
+    retain_migration(temporary.path(), canonical_path, error)
+}
+
+fn retain_unowned_migration(path: &Path, canonical_path: &Path, error: String) -> String {
+    retain_migration(path, canonical_path, error)
+}
+
+fn retain_migration(path: &Path, canonical_path: &Path, error: String) -> String {
+    let retained = format!(
+        "incomplete migration database retained for manual inspection at {}",
+        path.to_string_lossy()
+    );
+    let detail = format!("{error}; {retained}");
+    if is_state_database_error(&error) {
+        return detail;
     }
+    state_database_error(canonical_path, "migrate", detail)
 }
 
 fn verify_authenticated(
@@ -542,16 +942,16 @@ fn sync_verified_temporary(path: &Path, canonical_path: &Path) -> Result<(), Str
 
 fn swap_database(
     source: &Path,
-    migration: &Path,
+    migration: &MigrationTemporary,
     backup: &Path,
     canonical_path: &Path,
 ) -> Result<StateMigrationReport, String> {
     if let Err(error) = reject_existing_target(canonical_path, backup, "swap") {
-        return Err(clean_created_migration(migration, canonical_path, error));
+        return Err(retain_created_migration(migration, canonical_path, error));
     }
-    if let Err(error) = fs::rename(source, backup) {
+    if let Err(error) = rename_no_replace(source, backup) {
         let error = state_database_error(canonical_path, "swap", error.to_string());
-        return Err(clean_created_migration(migration, canonical_path, error));
+        return Err(retain_created_migration(migration, canonical_path, error));
     }
     if let Err(error) = sync_parent_directory(backup) {
         return recover_uninstalled(source, migration, backup, canonical_path, error);
@@ -561,14 +961,14 @@ fn swap_database(
 
 fn install_migration(
     source: &Path,
-    migration: &Path,
+    migration: &MigrationTemporary,
     backup: &Path,
     canonical_path: &Path,
 ) -> Result<StateMigrationReport, String> {
     if let Err(error) = reject_existing_target(canonical_path, canonical_path, "swap") {
         return recover_uninstalled(source, migration, backup, canonical_path, error);
     }
-    if let Err(error) = fs::rename(migration, canonical_path) {
+    if let Err(error) = rename_no_replace(migration.path(), canonical_path) {
         return recover_uninstalled(source, migration, backup, canonical_path, error.to_string());
     }
     if let Err(error) = sync_parent_directory(canonical_path) {
@@ -576,36 +976,42 @@ fn install_migration(
     }
     Ok(StateMigrationReport {
         retained_backup_path: backup.to_path_buf(),
+        retained_artifact_paths: Vec::new(),
     })
 }
 
 fn recover_uninstalled(
     source: &Path,
-    migration: &Path,
+    migration: &MigrationTemporary,
     backup: &Path,
     canonical_path: &Path,
     failure: String,
 ) -> Result<StateMigrationReport, String> {
     let restore = restore_original(backup, source);
-    let cleanup = cleanup_status(migration);
+    let cleanup = format!(
+        "uninstalled migration retained at {} for fail-closed recovery",
+        migration.path().to_string_lossy()
+    );
     Err(recovery_error(canonical_path, &failure, &restore, &cleanup))
 }
 
 fn recover_installed(
-    source: &Path,
+    _source: &Path,
     backup: &Path,
     canonical_path: &Path,
     failure: String,
 ) -> Result<StateMigrationReport, String> {
-    let cleanup = cleanup_status(canonical_path);
-    let restore = match path_entry_exists(canonical_path) {
-        Ok(true) => "original restore not attempted because replacement cleanup failed".to_string(),
-        Ok(false) => restore_original(backup, source),
-        Err(error) => format!(
-            "original restore not attempted because replacement path could not be inspected: {error}"
-        ),
-    };
-    Err(recovery_error(canonical_path, &failure, &restore, &cleanup))
+    let restore = format!(
+        "original retained at {}; installed replacement retained at {}",
+        backup.to_string_lossy(),
+        canonical_path.to_string_lossy()
+    );
+    Err(recovery_error(
+        canonical_path,
+        &failure,
+        &restore,
+        "no path was deleted after the installed replacement failed to sync",
+    ))
 }
 
 fn restore_original(backup: &Path, source: &Path) -> String {
@@ -624,7 +1030,7 @@ fn restore_original(backup: &Path, source: &Path) -> String {
         }
         Ok(false) => {}
     }
-    match fs::rename(backup, source) {
+    match rename_no_replace(backup, source) {
         Ok(()) => format!("original restored; {}", directory_sync_status(source)),
         Err(error) => format!(
             "original restore failed: {error}; original remains at {}",
@@ -641,27 +1047,6 @@ fn recovery_error(canonical_path: &Path, failure: &str, restore: &str, cleanup: 
     )
 }
 
-fn cleanup_status(path: &Path) -> String {
-    match cleanup_temporary(path) {
-        Ok(()) => "temporary database removed and directory synced".to_string(),
-        Err(error) => format!("temporary database cleanup failed: {error}"),
-    }
-}
-
-fn cleanup_temporary(path: &Path) -> Result<(), String> {
-    let Some(metadata) = path_entry_metadata(path)? else {
-        return Ok(());
-    };
-    if !metadata.file_type().is_file() {
-        return Err(format!(
-            "refusing to remove non-file temporary database entry {}",
-            path.to_string_lossy()
-        ));
-    }
-    fs::remove_file(path).map_err(|error| error.to_string())?;
-    sync_parent_directory(path)
-}
-
 fn directory_sync_status(path: &Path) -> String {
     match sync_parent_directory(path) {
         Ok(()) => "parent directory synced".to_string(),
@@ -673,8 +1058,8 @@ fn unique_backup_path(canonical_path: &Path) -> Result<PathBuf, String> {
     unique_sibling_path(canonical_path, "pre-sql-v2", "swap")
 }
 
-fn unique_temporary_path(canonical_path: &Path, label: &str) -> Result<PathBuf, String> {
-    unique_sibling_path(canonical_path, label, "migrate")
+fn temporary_path(canonical_path: &Path, label: &str) -> Result<PathBuf, String> {
+    sibling_path(canonical_path, label, "migrate")
 }
 
 fn unique_sibling_path(canonical_path: &Path, label: &str, stage: &str) -> Result<PathBuf, String> {
@@ -738,14 +1123,15 @@ fn path_entry_metadata(path: &Path) -> Result<Option<fs::Metadata>, String> {
     }
 }
 
-fn remove_temporary_upgrade(
-    readable: &ReadableSource,
-    canonical_path: &Path,
-) -> Result<(), String> {
-    let Some(path) = &readable.temporary_upgrade else {
-        return Ok(());
-    };
-    cleanup_temporary(path).map_err(|error| state_database_error(canonical_path, "migrate", error))
+#[cfg(windows)]
+fn paths_match(left: &Path, right: &Path) -> bool {
+    super::path::clean_display_path(left)
+        .eq_ignore_ascii_case(&super::path::clean_display_path(right))
+}
+
+#[cfg(not(windows))]
+fn paths_match(left: &Path, right: &Path) -> bool {
+    left == right
 }
 
 fn clean_readable_source(
@@ -756,7 +1142,62 @@ fn clean_readable_source(
     let Some(path) = &readable.temporary_upgrade else {
         return error;
     };
-    clean_created_migration(path, canonical_path, error)
+    retain_created_migration(path, canonical_path, error)
+}
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+    target_vendor = "apple",
+    target_os = "redox"
+))]
+fn rename_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    use rustix::fs::{CWD, RenameFlags, renameat_with};
+
+    renameat_with(CWD, source, CWD, destination, RenameFlags::NOREPLACE).map_err(io::Error::from)
+}
+
+#[cfg(windows)]
+fn rename_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_WRITE_THROUGH, MoveFileExW};
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let destination = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    // MoveFileExW without MOVEFILE_REPLACE_EXISTING is an atomic no-overwrite move.
+    let moved = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "android",
+    target_vendor = "apple",
+    target_os = "redox",
+    windows
+)))]
+fn rename_no_replace(_source: &Path, _destination: &Path) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "atomic no-replace state migration is unsupported on this platform",
+    ))
 }
 
 fn unix_timestamp_now() -> u64 {

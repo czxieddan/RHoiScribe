@@ -20,16 +20,16 @@
 //------------------------------------------------------------------------------------
 
 use std::{
-    ffi::OsStr,
     fs::{self, File, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
     thread,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 use rnmdb_cli::page_key_from_hex;
 use rnmdb_storage::PageCryptoKey;
+use sha2::{Digest, Sha256};
 
 pub(crate) const STATE_DATABASE_FILE_NAME: &str = "state.rnmdb";
 pub(crate) const LEGACY_STATE_DATABASE_FILE_NAME: &str = "rhoiscribe-state.rnmdb";
@@ -37,7 +37,6 @@ pub(crate) const PAGE_KEY_FILE_NAME: &str = "rnmdb-page.key";
 
 const LOCK_RETRY_COUNT: usize = 250;
 const LOCK_RETRY_DELAY: Duration = Duration::from_millis(20);
-const STALE_LOCK_AFTER: Duration = Duration::from_secs(30 * 60);
 
 pub(crate) fn default_rhoiscribe_dir() -> PathBuf {
     user_home_dir()
@@ -229,70 +228,249 @@ fn nibble_to_hex(value: u8) -> char {
 }
 
 pub(crate) struct StateMutationLock {
-    path: PathBuf,
-    _file: File,
+    files: Vec<File>,
+    database_identities: Vec<LockedDatabaseIdentity>,
+}
+
+struct LockedDatabaseIdentity {
+    key: String,
+    _handle: same_file::Handle,
 }
 
 impl StateMutationLock {
     pub(crate) fn acquire(store_path: &Path) -> Result<Self, String> {
-        let path = mutation_lock_path(store_path);
-        ensure_parent(&path)?;
-        acquire_lock_file(&path).map(|file| Self { path, _file: file })
+        reject_reserved_state_path(store_path)?;
+        let path = path_lock_path(store_path)?;
+        let file = acquire_named_lock(&path)?;
+        let mut state_lock = Self {
+            files: vec![file],
+            database_identities: Vec::new(),
+        };
+        state_lock.bind_existing_database(store_path)?;
+        let legacy_path = legacy_state_database_path(store_path);
+        if legacy_path != store_path {
+            state_lock.bind_existing_database(&legacy_path)?;
+        }
+        Ok(state_lock)
+    }
+
+    pub(crate) fn bind_existing_database(&mut self, store_path: &Path) -> Result<(), String> {
+        let Some(metadata) = database_path_metadata(store_path)? else {
+            return Ok(());
+        };
+        validate_database_file_type(store_path, &metadata)?;
+        if !metadata.file_type().is_file() {
+            return Ok(());
+        }
+        let identity = same_file::Handle::from_path(store_path).map_err(|error| {
+            format!(
+                "failed to identify state database at {}: {error}",
+                clean_display_path(store_path)
+            )
+        })?;
+        self.bind_database_identity(identity)
+    }
+
+    fn bind_database_identity(&mut self, identity: same_file::Handle) -> Result<(), String> {
+        let (kind, key) = stable_identity_key(&identity)?;
+        let lock_key = format!("{kind}:{key}");
+        if self
+            .database_identities
+            .iter()
+            .any(|existing| existing.key == lock_key)
+        {
+            return Ok(());
+        }
+        let path = named_lock_path(kind, &key);
+        self.files.push(acquire_named_lock(&path)?);
+        self.database_identities.push(LockedDatabaseIdentity {
+            key: lock_key,
+            _handle: identity,
+        });
+        Ok(())
     }
 }
 
 impl Drop for StateMutationLock {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        for file in self.files.iter_mut().rev() {
+            let _ = file.unlock();
+        }
     }
 }
 
-fn mutation_lock_path(store_path: &Path) -> PathBuf {
-    let mut file_name = store_path
+fn path_lock_path(store_path: &Path) -> Result<PathBuf, String> {
+    ensure_parent(store_path)?;
+    let parent = store_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let parent = fs::canonicalize(parent).map_err(|error| {
+        format!(
+            "failed to canonicalize state database parent {}: {error}",
+            clean_display_path(parent)
+        )
+    })?;
+    let file_name = store_path
         .file_name()
-        .unwrap_or_else(|| OsStr::new(STATE_DATABASE_FILE_NAME))
-        .to_os_string();
-    file_name.push(".lock");
-    store_path.with_file_name(file_name)
+        .ok_or_else(|| "state database path must include a file name".to_string())?;
+    let normalized = parent.join(lock_file_name(file_name));
+    Ok(named_lock_path(
+        "path-v1",
+        &hex::encode(Sha256::digest(path_lock_bytes(&normalized))),
+    ))
+}
+
+#[cfg(windows)]
+fn lock_file_name(file_name: &std::ffi::OsStr) -> std::ffi::OsString {
+    file_name.to_string_lossy().to_lowercase().into()
+}
+
+#[cfg(not(windows))]
+fn lock_file_name(file_name: &std::ffi::OsStr) -> std::ffi::OsString {
+    file_name.to_os_string()
+}
+
+fn named_lock_path(kind: &str, key: &str) -> PathBuf {
+    default_rhoiscribe_dir()
+        .join("state-locks")
+        .join(format!("{kind}-{key}.lock"))
+}
+
+#[cfg(unix)]
+fn path_lock_bytes(path: &Path) -> Vec<u8> {
+    use std::os::unix::ffi::OsStrExt;
+
+    path.as_os_str().as_bytes().to_vec()
+}
+
+#[cfg(windows)]
+fn path_lock_bytes(path: &Path) -> Vec<u8> {
+    use std::os::windows::ffi::OsStrExt;
+
+    path.as_os_str()
+        .encode_wide()
+        .flat_map(u16::to_le_bytes)
+        .collect()
+}
+
+#[cfg(not(any(unix, windows)))]
+fn path_lock_bytes(path: &Path) -> Vec<u8> {
+    path.to_string_lossy().as_bytes().to_vec()
+}
+
+#[cfg(unix)]
+fn stable_identity_key(identity: &same_file::Handle) -> Result<(&'static str, String), String> {
+    Ok((
+        "file-v1-unix",
+        format!("{:016x}-{:016x}", identity.dev(), identity.ino()),
+    ))
+}
+
+#[cfg(windows)]
+fn stable_identity_key(identity: &same_file::Handle) -> Result<(&'static str, String), String> {
+    use std::{mem::size_of, os::windows::io::AsRawHandle};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx,
+    };
+
+    let mut information = FILE_ID_INFO::default();
+    let found = unsafe {
+        GetFileInformationByHandleEx(
+            identity.as_file().as_raw_handle(),
+            FileIdInfo,
+            std::ptr::from_mut(&mut information).cast(),
+            size_of::<FILE_ID_INFO>() as u32,
+        )
+    };
+    if found == 0 {
+        return Err(format!(
+            "failed to read stable state database identity: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok((
+        "file-v1-windows",
+        format!(
+            "{:016x}-{}",
+            information.VolumeSerialNumber,
+            hex::encode(information.FileId.Identifier)
+        ),
+    ))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn stable_identity_key(_identity: &same_file::Handle) -> Result<(&'static str, String), String> {
+    Err("stable state database identity locks are unsupported on this platform".to_string())
+}
+
+fn reject_reserved_state_path(path: &Path) -> Result<(), String> {
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    if [".migrating-sql-v2", ".legacy-format-upgrade", ".pre-sql-v2"]
+        .iter()
+        .any(|label| file_name.contains(label))
+    {
+        return Err(format!(
+            "state database path {} is reserved for migration recovery",
+            clean_display_path(path)
+        ));
+    }
+    Ok(())
+}
+
+fn database_path_metadata(path: &Path) -> Result<Option<fs::Metadata>, String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!(
+            "failed to inspect state database path {}: {error}",
+            clean_display_path(path)
+        )),
+    }
+}
+
+fn validate_database_file_type(path: &Path, metadata: &fs::Metadata) -> Result<(), String> {
+    if metadata.file_type().is_symlink() {
+        return Err(format!(
+            "state database path {} must not be a symbolic link",
+            clean_display_path(path)
+        ));
+    }
+    Ok(())
+}
+
+fn acquire_named_lock(path: &Path) -> Result<File, String> {
+    ensure_parent(path)?;
+    acquire_lock_file(path).map_err(|error| {
+        format!(
+            "failed to acquire state store lock at {}: {error}",
+            clean_display_path(path)
+        )
+    })
 }
 
 fn acquire_lock_file(path: &Path) -> Result<File, String> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|error| error.to_string())?;
     for _ in 0..LOCK_RETRY_COUNT {
-        remove_stale_lock(path)?;
-        match try_create_lock(path)? {
-            Some(file) => return Ok(file),
-            None => thread::sleep(LOCK_RETRY_DELAY),
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                thread::sleep(LOCK_RETRY_DELAY);
+            }
+            Err(std::fs::TryLockError::Error(error)) => return Err(error.to_string()),
         }
     }
     Err(format!(
         "timed out waiting for state store lock at {}",
         clean_display_path(path)
     ))
-}
-
-fn try_create_lock(path: &Path) -> Result<Option<File>, String> {
-    match OpenOptions::new().write(true).create_new(true).open(path) {
-        Ok(file) => Ok(Some(file)),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(None),
-        Err(error) => Err(error.to_string()),
-    }
-}
-
-fn remove_stale_lock(path: &Path) -> Result<(), String> {
-    if !lock_is_stale(path) {
-        return Ok(());
-    }
-    fs::remove_file(path).map_err(|error| error.to_string())
-}
-
-fn lock_is_stale(path: &Path) -> bool {
-    let Ok(metadata) = fs::metadata(path) else {
-        return false;
-    };
-    let Ok(modified) = metadata.modified() else {
-        return false;
-    };
-    SystemTime::now()
-        .duration_since(modified)
-        .is_ok_and(|age| age > STALE_LOCK_AFTER)
 }

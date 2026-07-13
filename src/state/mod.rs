@@ -40,14 +40,25 @@ pub(crate) const MOD_SCOPE_KIND: &str = "mod";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StateMigrationReport {
     pub(crate) retained_backup_path: PathBuf,
+    pub(crate) retained_artifact_paths: Vec<PathBuf>,
 }
 
 impl StateMigrationReport {
     pub(crate) fn retained_backup_message(&self) -> String {
-        format!(
+        let mut message = format!(
             "legacy RNMDB state migrated; retained backup: {}",
             clean_display_path(&self.retained_backup_path)
-        )
+        );
+        if !self.retained_artifact_paths.is_empty() {
+            let paths = self
+                .retained_artifact_paths
+                .iter()
+                .map(|path| clean_display_path(path))
+                .collect::<Vec<_>>()
+                .join(", ");
+            message.push_str(&format!("; retained compatibility artifacts: {paths}"));
+        }
+        message
     }
 }
 
