@@ -51,19 +51,7 @@ impl RnmdbSingleFilePageStore {
         reject_state_store_name(path)?;
         let mut mutation_lock = StateMutationLock::acquire(path)?;
         ensure_parent(path)?;
-        let page_key = page_crypto_key()?;
-        let backend = if path.exists() {
-            let backend = SingleFileBackend::open_with_key(path, page_key)
-                .map_err(|error| error.to_string())?;
-            reject_rhoiscribe_state_backend(path, &backend)?;
-            backend
-        } else {
-            SingleFileBackend::create(
-                path,
-                SingleFileOptions::new(PageSize::new(page_size_bytes)).with_page_key(page_key),
-            )
-            .map_err(|error| error.to_string())?
-        };
+        let backend = open_or_create_backend(path, page_size_bytes)?;
         mutation_lock.bind_existing_database(path)?;
         let page_size_bytes = backend.page_size().bytes();
 
@@ -96,6 +84,24 @@ impl RnmdbSingleFilePageStore {
             .and_then(|_| self.backend.sync().map(|_| ()))
             .map_err(|error| error.to_string())
     }
+}
+
+fn open_or_create_backend(
+    path: &Path,
+    page_size_bytes: usize,
+) -> Result<SingleFileBackend, String> {
+    let page_key = page_crypto_key()?;
+    if path.exists() {
+        let backend =
+            SingleFileBackend::open_with_key(path, page_key).map_err(|error| error.to_string())?;
+        reject_rhoiscribe_state_backend(path, &backend)?;
+        return Ok(backend);
+    }
+    SingleFileBackend::create(
+        path,
+        SingleFileOptions::new(PageSize::new(page_size_bytes)).with_page_key(page_key),
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn reject_state_store_name(path: &Path) -> Result<(), String> {
