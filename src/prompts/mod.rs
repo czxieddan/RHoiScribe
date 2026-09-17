@@ -21,7 +21,7 @@
 
 use std::{error::Error, fmt};
 
-use rmcp::model::{GetPromptResult, Prompt, PromptArgument, PromptMessage, PromptMessageRole};
+use rmcp::model::{GetPromptResult, Prompt, PromptArgument, PromptMessage, Role};
 use serde_json::{Map, Value};
 
 pub const MODULE_PURPOSE: &str = "agent prompt templates";
@@ -221,7 +221,7 @@ impl PromptCatalog {
         let text = render_prompt_text(prompt.mode, request, &optional_context);
 
         Ok(
-            GetPromptResult::new(vec![PromptMessage::new_text(PromptMessageRole::User, text)])
+            GetPromptResult::new(vec![PromptMessage::new_text(Role::User, text)])
                 .with_description(prompt.description),
         )
     }

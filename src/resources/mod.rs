@@ -21,7 +21,7 @@
 
 use std::{error::Error, fmt};
 
-use rmcp::model::{Annotated, RawResource, ReadResourceResult, Resource, ResourceContents};
+use rmcp::model::{ReadResourceResult, Resource, ResourceContents};
 
 mod cwt;
 mod knowledge;
@@ -174,14 +174,11 @@ fn text_resource_with_size(
     size: usize,
     mime_type: &str,
 ) -> Resource {
-    Annotated::new(
-        RawResource::new(uri, name)
-            .with_title(title)
-            .with_description(description)
-            .with_mime_type(mime_type)
-            .with_size(size as u32),
-        None,
-    )
+    Resource::new(uri, name)
+        .with_title(title)
+        .with_description(description)
+        .with_mime_type(mime_type)
+        .with_size(size as u64)
 }
 
 fn topic_uri(topic_id: &str) -> String {

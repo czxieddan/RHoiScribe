@@ -49,7 +49,7 @@ mod unique_scan;
 
 use std::{borrow::Cow, error::Error, fmt, fs, path::Path, sync::Arc};
 
-use rmcp::model::{CallToolResult, Content, JsonObject, Tool, ToolAnnotations};
+use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotations};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -741,7 +741,7 @@ fn append_migration_message(
     };
     match result {
         Ok(mut result) => {
-            result.content.push(Content::text(message));
+            result.content.push(ContentBlock::text(message));
             Ok(result)
         }
         Err(source) => Err(ToolError::ToolFailedAfterStateMigration {
